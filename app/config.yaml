@@ -1,0 +1,36 @@
+camera:
+  rtsp_url: "rtsp://admin:9H)p5x84@192.168.1.64:554/Streaming/Channels/101"
+  process_width: 640
+  fps_limit: 8
+  reconnect_backoff_sec: 2
+  detect_every_n_frames: 1
+
+model:
+  yolo_weights: "yolov8n.pt"
+  conf_thres: 0.35
+
+roi:
+  name: "zona_1"
+  # puntos en coordenadas del frame procesado (process_width)
+  points: [[50,50],[590,60],[610,330],[40,320]]
+
+logic:
+  # tu requerimiento: 2 segundos
+  dwell_seconds: 2.0
+  cooldown_seconds: 60
+  iou_match_thres: 0.30
+  track_ttl_seconds: 2.0
+
+whatsapp:
+  # waha base URL
+  waha_url: "http://127.0.0.1:3000"
+  # header X-Api-Key (igual a WAHA_API_KEY del .env si lo usas)
+  api_key: "change-me-please"
+  session: "default"
+  # Grupo: formato 123...@g.us (obtén con app/tools/get_groups.py)
+  chat_id: "120363047294315024@g.us"
+  caption_template: "Alerta: persona en {roi} por {dwell:.1f}s | {ts}"
+
+storage:
+  events_dir: "./events"
+  save_annotated: true

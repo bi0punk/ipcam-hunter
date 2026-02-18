@@ -8,9 +8,7 @@ services:
       - .env
     environment:
       - WAHA_API_KEY=${WAHA_API_KEY}
-      - WAHA_DASHBOARD_ENABLED=true
-      - WAHA_DASHBOARD_USERNAME=admin
-      - WAHA_DASHBOARD_PASSWORD=test123
+    volumes:
       - ./waha-sessions:/app/.sessions
     restart: unless-stopped
 

@@ -2,6 +2,7 @@
 import argparse
 import base64
 import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,21 +11,61 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 import requests
+from requests.auth import HTTPDigestAuth, HTTPBasicAuth
 import yaml
 from ultralytics import YOLO
 
+# Soporte opcional: permite correr el script fuera de docker compose leyendo .env
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 BBox = Tuple[float, float, float, float]  # x1, y1, x2, y2
+
 
 def now_ts() -> float:
     return time.monotonic()
 
+
 def iso_time() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
+
 
 def safe_write_json(path: Path, obj: dict) -> None:
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
     tmp.replace(path)
+
+
+def fetch_isapi_snapshot(
+    url: str,
+    username: str,
+    password: str,
+    auth_mode: str = "digest",
+    timeout_s: float = 4.0
+) -> bytes:
+    """Obtiene snapshot JPEG por ISAPI (Hikvision) usando Basic o Digest.
+
+    Retorna bytes JPEG. Lanza excepción si la respuesta no parece una imagen.
+    """
+    auth_mode = (auth_mode or "digest").strip().lower()
+    if auth_mode == "basic":
+        auth = HTTPBasicAuth(username, password)
+    else:
+        auth = HTTPDigestAuth(username, password)
+
+    r = requests.get(url, auth=auth, timeout=timeout_s)
+    r.raise_for_status()
+    data = r.content or b""
+
+    # Validación rápida de JPEG (magic bytes)
+    if not data.startswith(b"\xff\xd8"):
+        head = data[:200].decode("utf-8", errors="replace")
+        raise RuntimeError(f"ISAPI snapshot no es JPEG (len={len(data)}). Head: {head}")
+
+    return data
 
 
 def iou(a: BBox, b: BBox) -> float:
@@ -41,9 +82,11 @@ def iou(a: BBox, b: BBox) -> float:
     denom = area_a + area_b - inter
     return inter / denom if denom > 0 else 0.0
 
+
 def centroid(bb: BBox) -> Tuple[int, int]:
     x1, y1, x2, y2 = bb
     return (int((x1 + x2) / 2.0), int((y1 + y2) / 2.0))
+
 
 @dataclass
 class Track:
@@ -53,11 +96,9 @@ class Track:
     in_roi_since: Optional[float] = None
     fired: bool = False
 
+
 class IoUTracker:
-    """
-    Tracker minimalista por IoU (suficiente para 1 cámara y condición 'cualquiera en ROI').
-    Si luego quieres algo más robusto: ByteTrack/DeepSORT.
-    """
+    """Tracker minimalista por IoU (suficiente para 1 cámara y condición 'cualquiera en ROI')."""
     def __init__(self, match_thres: float, ttl_sec: float):
         self.match_thres = match_thres
         self.ttl_sec = ttl_sec
@@ -98,6 +139,7 @@ class IoUTracker:
 
         return list(self.tracks.values())
 
+
 class WahaClient:
     def __init__(self, base_url: str, session: str, api_key: str = ""):
         self.base_url = base_url.rstrip("/")
@@ -127,12 +169,15 @@ class WahaClient:
         r.raise_for_status()
         return r.json() if r.content else {"status": "ok"}
 
+
 def load_cfg(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) or {}
+
 
 def point_in_roi(pt: Tuple[int, int], roi_pts: np.ndarray) -> bool:
     return cv2.pointPolygonTest(roi_pts, pt, False) >= 0
+
 
 def draw_overlay(img: np.ndarray, roi_pts: np.ndarray, tracks: List[Track], dwell_map: Dict[int, float]) -> np.ndarray:
     out = img.copy()
@@ -146,6 +191,7 @@ def draw_overlay(img: np.ndarray, roi_pts: np.ndarray, tracks: List[Track], dwel
     cv2.putText(out, iso_time(), (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
     return out
 
+
 def main():
     ap = argparse.ArgumentParser(description="ROI dwell alert -> snapshot -> WhatsApp (waha)")
     ap.add_argument("--config", default="app/config.yaml", help="Ruta a config.yaml")
@@ -153,15 +199,27 @@ def main():
 
     cfg = load_cfg(Path(args.config))
 
-    rtsp = cfg["camera"]["rtsp_url"]
+    # -----------------------------
+    # Camera (RTSP): secreto -> .env
+    # -----------------------------
+    rtsp = os.getenv("CAM_RTSP_URL", "").strip() or (cfg.get("camera", {}) or {}).get("rtsp_url", "")
+    if not rtsp:
+        raise SystemExit("Falta RTSP. Define CAM_RTSP_URL en .env (recomendado) o camera.rtsp_url en config.yaml")
+
     process_w = int(cfg["camera"]["process_width"])
     fps_limit = float(cfg["camera"]["fps_limit"])
     backoff = float(cfg["camera"]["reconnect_backoff_sec"])
     detect_every = int(cfg["camera"].get("detect_every_n_frames", 1))
 
+    # -----------------------------
+    # Model
+    # -----------------------------
     weights = cfg["model"]["yolo_weights"]
     conf_thres = float(cfg["model"]["conf_thres"])
 
+    # -----------------------------
+    # ROI / logic
+    # -----------------------------
     roi_points = np.array(cfg["roi"]["points"], dtype=np.int32)
     roi_name = cfg["roi"].get("name", "roi")
 
@@ -170,17 +228,52 @@ def main():
     match_thres = float(cfg["logic"]["iou_match_thres"])
     ttl_sec = float(cfg["logic"]["track_ttl_seconds"])
 
+    # -----------------------------
+    # Storage
+    # -----------------------------
     events_dir = Path(cfg["storage"]["events_dir"])
     events_dir.mkdir(parents=True, exist_ok=True)
     save_annotated = bool(cfg["storage"].get("save_annotated", True))
 
+    # -----------------------------
+    # WAHA: api key secreto -> .env
+    # -----------------------------
+    # Defaults razonables para docker compose
+    waha_base = os.getenv("WAHA_URL", "").strip() or (cfg.get("whatsapp", {}) or {}).get("waha_url", "http://waha:3000")
+    waha_key = os.getenv("WAHA_API_KEY", "").strip() or (cfg.get("whatsapp", {}) or {}).get("api_key", "")
+    waha_session = os.getenv("WAHA_SESSION", "").strip() or (cfg.get("whatsapp", {}) or {}).get("session", "default")
+    chat_id = os.getenv("WAHA_CHAT_ID", "").strip() or (cfg.get("whatsapp", {}) or {}).get("chat_id", "")
+
+    if not chat_id:
+        raise SystemExit("Falta chat_id. Define WAHA_CHAT_ID en .env o whatsapp.chat_id en config.yaml")
+
     waha = WahaClient(
-        base_url=cfg["whatsapp"]["waha_url"],
-        session=cfg["whatsapp"]["session"],
-        api_key=cfg["whatsapp"].get("api_key", "")
+        base_url=waha_base,
+        session=waha_session,
+        api_key=waha_key
     )
-    chat_id = cfg["whatsapp"]["chat_id"]
     caption_tpl = cfg["whatsapp"]["caption_template"]
+
+    # -----------------------------
+    # Evidence (ISAPI)
+    # -----------------------------
+    evidence_cfg = cfg.get("evidence", {}) or {}
+    evidence_mode = str(evidence_cfg.get("mode", "rtsp")).strip().lower()
+    evidence_timeout_s = float(evidence_cfg.get("timeout_s", 4.0))
+    fallback_to_rtsp = bool(evidence_cfg.get("fallback_to_rtsp", True))
+
+    isapi_cfg = cfg.get("isapi", {}) or {}
+
+    # URL y modo auth pueden ir en config.yaml o env; user/pass SOLO env
+    isapi_url = os.getenv("ISAPI_URL", "").strip() or str(isapi_cfg.get("url", "")).strip()
+    isapi_auth = os.getenv("ISAPI_AUTH", "").strip().lower() or str(isapi_cfg.get("auth", "digest")).strip().lower()
+    isapi_user = os.environ.get("ISAPI_USER", "").strip()
+    isapi_pass = os.environ.get("ISAPI_PASS", "").strip()
+
+    if evidence_mode == "isapi":
+        if not isapi_url or not isapi_user or not isapi_pass:
+            print("[warn] evidence.mode=isapi pero faltan ISAPI_URL o ISAPI_USER/ISAPI_PASS. Usando rtsp frame como evidencia.")
+            evidence_mode = "rtsp"
 
     model = YOLO(weights)
     tracker = IoUTracker(match_thres=match_thres, ttl_sec=ttl_sec)
@@ -189,7 +282,9 @@ def main():
     last_status_write = 0.0
     last_event_name = None
     frame_idx = 0
-    print(f"[start] rtsp={rtsp} | dwell={dwell_sec}s | cooldown={cooldown_sec}s | chat={chat_id}")
+
+    # No imprimir credenciales
+    print(f"[start] rtsp_host={rtsp.split('@')[-1] if '@' in rtsp else rtsp} | dwell={dwell_sec}s | cooldown={cooldown_sec}s | chat={chat_id}")
 
     cap = None
     next_frame_time = 0.0
@@ -226,7 +321,6 @@ def main():
         dets: List[BBox] = []
 
         if frame_idx % detect_every == 0:
-            # clase 0 = person
             res = model.predict(frame_p, conf=conf_thres, classes=[0], verbose=False)[0]
             if res.boxes is not None and len(res.boxes) > 0:
                 xyxy = res.boxes.xyxy.cpu().numpy()
@@ -252,7 +346,6 @@ def main():
                 dwell = ts - tr.in_roi_since
                 dwell_map[tr.tid] = dwell
 
-                # Cruza umbral dwell (>=2s) y aplica cooldown global
                 if (not tr.fired) and (dwell >= dwell_sec):
                     if (ts - last_alert_ts) >= cooldown_sec:
                         triggered = True
@@ -267,22 +360,58 @@ def main():
         if triggered and triggered_track is not None:
             stamp = time.strftime("%Y%m%d_%H%M%S")
             base = f"{stamp}_tid{triggered_track.tid}_{roi_name}"
-            jpg_path = events_dir / f"{base}.jpg"
+            jpg_path = events_dir / f"{base}.jpg"          # evidencia enviada a WhatsApp
+            annot_path = events_dir / f"{base}_annot.jpg"  # overlay para dashboard/forense
 
-            out_img = frame_p
+            saved_ok = False
+            skip_send = False
+
+            # 1) Evidencia principal
+            if evidence_mode == "isapi":
+                try:
+                    data = fetch_isapi_snapshot(
+                        url=isapi_url,
+                        username=isapi_user,
+                        password=isapi_pass,
+                        auth_mode=isapi_auth,
+                        timeout_s=evidence_timeout_s,
+                    )
+                    jpg_path.write_bytes(data)
+                    saved_ok = True
+                    print(f"[evidence] isapi ok -> {jpg_path.name} ({len(data)} bytes)")
+                except Exception as e:
+                    print(f"[evidence][warn] isapi fallo: {e}")
+                    if not fallback_to_rtsp:
+                        skip_send = True
+
+            if (not saved_ok) and (not skip_send):
+                out_img = frame_p
+                if save_annotated:
+                    out_img = draw_overlay(frame_p, roi_points, tracks, dwell_map)
+                cv2.imwrite(str(jpg_path), out_img, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
+
+            # 2) Overlay adicional (siempre basado en frame procesado)
             if save_annotated:
-                out_img = draw_overlay(frame_p, roi_points, tracks, dwell_map)
-
-            cv2.imwrite(str(jpg_path), out_img, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
-            last_event_name = jpg_path.name
+                try:
+                    over = draw_overlay(frame_p, roi_points, tracks, dwell_map)
+                    cv2.imwrite(str(annot_path), over, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                    last_event_name = annot_path.name
+                except Exception as e:
+                    print(f"[annot][warn] no pude guardar overlay: {e}")
+                    last_event_name = jpg_path.name
+            else:
+                last_event_name = jpg_path.name
 
             caption = caption_tpl.format(roi=roi_name, dwell=triggered_dwell, ts=iso_time())
-            try:
-                resp = waha.send_image_b64(chat_id=chat_id, jpeg_path=jpg_path, caption=caption)
-                print(f"[alert] enviado {jpg_path.name} -> {chat_id} | resp={json.dumps(resp)[:200]}")
-            except Exception as e:
-                print(f"[alert][error] fallo envío WhatsApp: {e}")
 
+            if skip_send:
+                print("[alert][warn] evidencia no disponible y fallback_to_rtsp=false -> no se envía WhatsApp")
+            else:
+                try:
+                    resp = waha.send_image_b64(chat_id=chat_id, jpeg_path=jpg_path, caption=caption)
+                    print(f"[alert] enviado {jpg_path.name} -> {chat_id} | resp={json.dumps(resp)[:200]}")
+                except Exception as e:
+                    print(f"[alert][error] fallo envío WhatsApp: {e}")
 
         # Emitir estado (para dashboard) ~1 vez/seg
         if (ts - last_status_write) >= 1.0:
@@ -294,6 +423,7 @@ def main():
                     inside_count += 1
                     if d > max_dwell:
                         max_dwell = d
+
             status_path = events_dir / "status.json"
             payload = {
                 "ts": iso_time(),
@@ -313,6 +443,7 @@ def main():
             last_status_write = ts
 
         frame_idx += 1
+
 
 if __name__ == "__main__":
     main()

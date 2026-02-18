@@ -4,7 +4,7 @@ import time
 import json
 from pathlib import Path
 from typing import Generator, Optional
-
+from fastapi import HTTPException
 import cv2
 import numpy as np
 import requests
@@ -252,7 +252,16 @@ def get_event(name: str):
 def mjpeg():
     cfg_path = Path(os.environ.get("CONFIG_PATH", "/app/config.yml"))
     cfg = load_cfg(cfg_path)
-    rtsp = cfg["camera"]["rtsp_url"]
+    
+
+    cam = cfg.get("camera", {}) or {}
+    rtsp = os.getenv("CAM_RTSP_URL", "").strip() or cam.get("rtsp_url") or cam.get("rtsp")
+
+    if not rtsp:
+        raise HTTPException(
+            status_code=500,
+        detail="Falta RTSP. Define CAM_RTSP_URL en .env (recomendado) o camera.rtsp_url en config.yaml"
+    )
     process_w = int(cfg["camera"].get("process_width", 640))
     fps_limit = float(cfg["camera"].get("fps_limit", 8))
     poly = roi_poly(cfg)

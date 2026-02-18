@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
 import argparse
+import os
 from pathlib import Path
 
 import cv2
 import yaml
 import numpy as np
 
+# Soporte opcional: permite correr el script fuera de docker compose leyendo .env
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
+
 def load_cfg(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) or {}
+
 
 def save_cfg(path: Path, cfg: dict) -> None:
     with path.open("w", encoding="utf-8") as f:
         yaml.safe_dump(cfg, f, sort_keys=False)
+
 
 def main():
     ap = argparse.ArgumentParser(description="Dibuja ROI poligonal sobre un frame RTSP y guarda en config.yaml")
@@ -22,8 +33,14 @@ def main():
     cfg_path = Path(args.config)
     cfg = load_cfg(cfg_path)
 
-    rtsp = cfg["camera"]["rtsp_url"]
-    process_w = int(cfg["camera"]["process_width"])
+    # RTSP: preferir CAM_RTSP_URL desde env (secreto), con fallback a config.yaml
+    rtsp = os.getenv("CAM_RTSP_URL", "").strip() or (cfg.get("camera", {}) or {}).get("rtsp_url", "")
+    if not rtsp:
+        raise SystemExit(
+            "Falta RTSP. Define CAM_RTSP_URL en .env (recomendado) o camera.rtsp_url en config.yaml"
+        )
+
+    process_w = int((cfg.get("camera", {}) or {}).get("process_width", 640))
 
     cap = cv2.VideoCapture(rtsp)
     ok, frame = cap.read()
@@ -65,6 +82,7 @@ def main():
             if len(points) < 3:
                 print("ROI requiere al menos 3 puntos.")
                 continue
+            cfg.setdefault("roi", {})
             cfg["roi"]["points"] = [[int(x), int(y)] for (x, y) in points]
             save_cfg(cfg_path, cfg)
             print("ROI guardado:", cfg["roi"]["points"])
@@ -74,6 +92,7 @@ def main():
             redraw()
 
     cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()

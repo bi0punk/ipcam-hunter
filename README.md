@@ -61,3 +61,29 @@ El dashboard:
 Ese popup es Basic Auth. Prueba:
 - Username: `any`
 - Password: tu `WAHA_API_KEY` (del `.env`)
+
+## Snapshot en máxima calidad (ISAPI)
+Si quieres que la foto enviada sea la “foto real” de la cámara (no el frame re-escalado del RTSP), usa ISAPI:
+
+1) En `app/config.yaml`:
+```yaml
+evidence:
+  mode: "isapi"
+  timeout_s: 4.0
+  fallback_to_rtsp: true
+
+isapi:
+  url: "http://192.168.1.64/ISAPI/Streaming/channels/101/picture"
+  auth: "digest"
+```
+
+2) En `.env` agrega credenciales:
+```bash
+ISAPI_USER=admin
+ISAPI_PASS=tu_password
+```
+
+El worker hará:
+- Detectar persona + dwell (ROI) usando RTSP
+- Cuando dispare, descarga snapshot JPEG vía ISAPI y **eso** se envía a WhatsApp
+- En paralelo, guarda un `*_annot.jpg` con overlay (para que el dashboard muestre ROI/bboxes)

@@ -10,16 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY app/requirements.txt /app/requirements.txt
+COPY dashboard/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir -r /app/requirements.txt
 
-COPY app/ /app/
+COPY dashboard/ /app/
 
-ENV CONFIG_PATH=/app/config.yaml
-VOLUME ["/data/events", "/root/.cache", "/root/.config"]
-
-COPY docker/app/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]
+EXPOSE 8081
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8081"]

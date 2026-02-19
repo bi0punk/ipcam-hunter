@@ -1,6 +1,9 @@
 fastapi>=0.110
-uvicorn[standard]>=0.27
 opencv-python>=4.8
 pyyaml>=6.0
 requests>=2.31
 numpy>=1.24
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+opencv-python-headless==4.10.0.84
+numpy==2.0.1

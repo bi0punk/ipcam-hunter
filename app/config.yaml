@@ -1,8 +1,10 @@
 camera:
-  process_width: 640
-  fps_limit: 8
+  process_width: 640          # ancho al que se reescala para inferencia/ROI coords
+  fps_limit: 8                # inferencia efectiva (aprox)
+  capture_fps_limit: 20       # captura interna (para baja latencia)
   reconnect_backoff_sec: 2
   detect_every_n_frames: 1
+  overlay_hz: 10              # overlay.json ~10 Hz
 
 model:
   yolo_weights: "yolov8n.pt"
@@ -11,6 +13,10 @@ model:
 roi:
   name: "zona_1"
   points: [[409,200],[600,200],[600,292],[409,292]]
+
+  # opcional: si quieres cargar ROI desde tu roi.json (xyxy en 1920x1080)
+  # from_json: true
+  # json_path: "./roi.json"
 
 logic:
   dwell_seconds: 2.0
@@ -24,8 +30,8 @@ whatsapp:
   caption_template: "Alerta: persona en {roi} por {dwell:.1f}s | {ts}"
 
 storage:
-  events_dir: "./events"
-  save_annotated: true
+  events_dir: "./events"     # se auto-redirige a /data/events si existe
+  save_annotated: true       # guarda evidencia anotada SOLO en evento
 
 evidence:
   mode: "isapi"

@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   waha:
     image: devlikeapro/waha
@@ -23,9 +25,9 @@ services:
       - .env
     environment:
       - WAHA_API_KEY=${WAHA_API_KEY}
-      - CONFIG_PATH=/app/config.yml
+      - CONFIG_PATH=/app/config.yaml
     volumes:
-      - ./app/config.yaml:/app/config.yml:ro
+      - ./app/config.yaml:/app/config.yaml:ro
       - ./events:/data/events
       - ./cache:/root/.cache
       - ./ultralytics:/root/.config/Ultralytics
@@ -43,12 +45,12 @@ services:
     environment:
       - WAHA_API_KEY=${WAHA_API_KEY}
       - WAHA_URL=http://waha:3000
-      - CONFIG_PATH=/app/config.yml
+      - CONFIG_PATH=/app/config.yaml
       - EVENTS_DIR=/data/events
       - STATUS_JSON=/data/events/status.json
     ports:
       - "8081:8081"
     volumes:
-      - ./app/config.yaml:/app/config.yml:ro
+      - ./app/config.yaml:/app/config.yaml:ro
       - ./events:/data/events:ro
     restart: unless-stopped

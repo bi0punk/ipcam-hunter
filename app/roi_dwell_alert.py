@@ -176,6 +176,7 @@ def load_cfg(path: Path) -> dict:
 
 
 def point_in_roi(pt: Tuple[int, int], roi_pts: np.ndarray) -> bool:
+    # roi_pts: Nx2 en coordenadas del frame procesado
     return cv2.pointPolygonTest(roi_pts, pt, False) >= 0
 
 
@@ -192,12 +193,46 @@ def draw_overlay(img: np.ndarray, roi_pts: np.ndarray, tracks: List[Track], dwel
     return out
 
 
+def resolve_config_path(cli_arg: str) -> Path:
+    # Prioridad: CLI --config > ENV CONFIG_PATH > default
+    env_cfg = os.getenv("CONFIG_PATH", "").strip()
+    if cli_arg and cli_arg != "app/config.yaml":
+        return Path(cli_arg)
+    if env_cfg:
+        return Path(env_cfg)
+    return Path(cli_arg)
+
+
+def resolve_events_dir(cfg_events_dir: str) -> Path:
+    # 1) Si existe ENV explícito, manda
+    env_events = os.getenv("EVENTS_DIR", "").strip()
+    if env_events:
+        return Path(env_events)
+
+    p = Path(cfg_events_dir)
+
+    # 2) Heurística docker: si hay volumen /data/events y el config usa relativo, redirigir a /data/events
+    # Esto evita que el dashboard "no vea nada" aunque el detector esté funcionando.
+    docker_events = Path("/data/events")
+    if not p.is_absolute() and docker_events.exists():
+        if cfg_events_dir.strip() in ("./events", "events"):
+            return docker_events
+
+    return p
+
+
 def main():
+    default_cfg = os.getenv("CONFIG_PATH", "").strip() or "app/config.yaml"
+
     ap = argparse.ArgumentParser(description="ROI dwell alert -> snapshot -> WhatsApp (waha)")
-    ap.add_argument("--config", default="app/config.yaml", help="Ruta a config.yaml")
+    ap.add_argument("--config", default=default_cfg, help="Ruta a config.yaml")
     args = ap.parse_args()
 
-    cfg = load_cfg(Path(args.config))
+    cfg_path = resolve_config_path(args.config)
+    if not cfg_path.exists():
+        raise SystemExit(f"Config no existe: {cfg_path} (tip: usa --config o CONFIG_PATH)")
+
+    cfg = load_cfg(cfg_path)
 
     # -----------------------------
     # Camera (RTSP): secreto -> .env
@@ -231,14 +266,14 @@ def main():
     # -----------------------------
     # Storage
     # -----------------------------
-    events_dir = Path(cfg["storage"]["events_dir"])
+    events_dir_cfg = str(cfg["storage"]["events_dir"])
+    events_dir = resolve_events_dir(events_dir_cfg)
     events_dir.mkdir(parents=True, exist_ok=True)
     save_annotated = bool(cfg["storage"].get("save_annotated", True))
 
     # -----------------------------
     # WAHA: api key secreto -> .env
     # -----------------------------
-    # Defaults razonables para docker compose
     waha_base = os.getenv("WAHA_URL", "").strip() or (cfg.get("whatsapp", {}) or {}).get("waha_url", "http://waha:3000")
     waha_key = os.getenv("WAHA_API_KEY", "").strip() or (cfg.get("whatsapp", {}) or {}).get("api_key", "")
     waha_session = os.getenv("WAHA_SESSION", "").strip() or (cfg.get("whatsapp", {}) or {}).get("session", "default")
@@ -264,7 +299,6 @@ def main():
 
     isapi_cfg = cfg.get("isapi", {}) or {}
 
-    # URL y modo auth pueden ir en config.yaml o env; user/pass SOLO env
     isapi_url = os.getenv("ISAPI_URL", "").strip() or str(isapi_cfg.get("url", "")).strip()
     isapi_auth = os.getenv("ISAPI_AUTH", "").strip().lower() or str(isapi_cfg.get("auth", "digest")).strip().lower()
     isapi_user = os.environ.get("ISAPI_USER", "").strip()
@@ -283,8 +317,17 @@ def main():
     last_event_name = None
     frame_idx = 0
 
+    # Debug detección
+    last_any_det_ts = now_ts()
+    no_det_warn_every_sec = 8.0
+
     # No imprimir credenciales
-    print(f"[start] rtsp_host={rtsp.split('@')[-1] if '@' in rtsp else rtsp} | dwell={dwell_sec}s | cooldown={cooldown_sec}s | chat={chat_id}")
+    rtsp_safe = rtsp.split("@")[-1] if "@" in rtsp else rtsp
+    print(
+        f"[start] cfg={cfg_path} | events_dir={events_dir} (cfg={events_dir_cfg}) | rtsp_host={rtsp_safe} | "
+        f"process_w={process_w} | conf={conf_thres} | dwell={dwell_sec}s | cooldown={cooldown_sec}s | chat={chat_id} | roi={roi_name}"
+    )
+    print(f"[roi] points(processed-coords)={roi_points.tolist()}")
 
     cap = None
     next_frame_time = 0.0
@@ -312,7 +355,7 @@ def main():
             time.sleep(max(0.0, next_frame_time - t))
         next_frame_time = now_ts() + (1.0 / max(1e-6, fps_limit))
 
-        # resize
+        # resize a ancho fijo
         h, w = frame.shape[:2]
         scale = process_w / float(w)
         frame_p = cv2.resize(frame, (process_w, int(h * scale)), interpolation=cv2.INTER_AREA)
@@ -321,11 +364,30 @@ def main():
         dets: List[BBox] = []
 
         if frame_idx % detect_every == 0:
+            # YOLO: persona en COCO = class 0
             res = model.predict(frame_p, conf=conf_thres, classes=[0], verbose=False)[0]
             if res.boxes is not None and len(res.boxes) > 0:
                 xyxy = res.boxes.xyxy.cpu().numpy()
-                for x1, y1, x2, y2 in xyxy:
-                    dets.append((float(x1), float(y1), float(x2), float(y2)))
+                # Filtro extra defensivo (por si "classes" no aplica según versión)
+                if hasattr(res.boxes, "cls") and res.boxes.cls is not None:
+                    cls = res.boxes.cls.cpu().numpy().astype(int)
+                    for (x1, y1, x2, y2), c in zip(xyxy, cls):
+                        if c == 0:
+                            dets.append((float(x1), float(y1), float(x2), float(y2)))
+                else:
+                    for x1, y1, x2, y2 in xyxy:
+                        dets.append((float(x1), float(y1), float(x2), float(y2)))
+
+        if dets:
+            last_any_det_ts = ts
+        else:
+            if (ts - last_any_det_ts) >= no_det_warn_every_sec and frame_idx % int(max(1, fps_limit)) == 0:
+                print(
+                    f"[detect][warn] {no_det_warn_every_sec:.0f}s sin detecciones (person). "
+                    f"Tip: baja model.conf_thres (ej 0.25) o sube camera.process_width (ej 960/1280). "
+                    f"frame_orig={w}x{h} frame_proc={frame_p.shape[1]}x{frame_p.shape[0]}"
+                )
+                last_any_det_ts = ts  # evitar spam
 
         tracks = tracker.update(dets, ts)
 
@@ -435,6 +497,8 @@ def main():
                 "chat_id": chat_id,
                 "fps_limit": fps_limit,
                 "process_width": process_w,
+                "events_dir": str(events_dir),
+                "config_path": str(cfg_path),
             }
             try:
                 safe_write_json(status_path, payload)

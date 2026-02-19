@@ -1,4 +1,3 @@
-version: "3.8"
 
 services:
   waha:
@@ -24,12 +23,9 @@ services:
     env_file:
       - .env
     environment:
-      - WAHA_API_KEY=${WAHA_API_KEY}
       - CONFIG_PATH=/app/config.yaml
       - EVENTS_DIR=/data/events
-      # opcionales (si quieres separar streams):
-      # - CAM_RTSP_URL_SUB=${CAM_RTSP_URL_SUB}
-      # - CAM_RTSP_URL_MAIN=${CAM_RTSP_URL_MAIN}
+      - WAHA_API_KEY=${WAHA_API_KEY}
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ./events:/data/events
@@ -39,27 +35,16 @@ services:
 
   dashboard:
     build:
-      context: .
-      dockerfile: dashboard/Dockerfile
+      context: ./app/web
+      dockerfile: Dockerfile
     container_name: roi-dashboard
     depends_on:
       - roi-alert
-    env_file:
-      - .env
     environment:
-      - PORT=8081
       - EVENTS_DIR=/data/events
-      - OVERLAY_JSON=/data/events/overlay.json
-      - STATUS_JSON=/data/events/status.json
-
-      # Video preview: idealmente substream para máxima fluidez/CPU bajo
-      # Si no defines CAM_RTSP_URL_PREVIEW, usa CAM_RTSP_URL.
-      - CAM_RTSP_URL_PREVIEW=${CAM_RTSP_URL_PREVIEW}
-
-      # Opcional: control del preview
-      - PREVIEW_WIDTH=640
-      - PREVIEW_FPS=15
-      - JPEG_QUALITY=80
+      - LIVE_FILENAME=live.jpg
+      - STATUS_FILENAME=status.json
+      - MJPEG_FPS=8
     ports:
       - "8081:8081"
     volumes:

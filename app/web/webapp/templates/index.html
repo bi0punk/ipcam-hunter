@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ROI Dashboard</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background:#0b0f14; color:#e6edf3; margin:0; }
+    .wrap { display:grid; grid-template-columns: 1fr 360px; gap:12px; padding:12px; }
+    .card { background:#111826; border:1px solid #1f2a37; border-radius:12px; padding:12px; }
+    .title { font-weight:700; margin:0 0 8px 0; }
+    .stat { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; white-space:pre-wrap; }
+    img, .video { width:100%; border-radius:12px; border:1px solid #1f2a37; background:#000; }
+    .hint { opacity:.8; font-size:12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <p class="title">Live</p>
+      <!-- MJPEG (más fluido). Si falla, cambia src a /api/live.jpg y refresca con JS -->
+      <img class="video" src="/api/live.mjpeg" alt="live stream" />
+      <p class="hint">Si no aparece nada, espera a que el worker escriba events/live.jpg</p>
+    </div>
+
+    <div class="card">
+      <p class="title">Status</p>
+      <div id="status" class="stat">cargando...</div>
+    </div>
+  </div>
+
+<script>
+async function poll() {
+  try {
+    const r = await fetch("/api/status", {cache:"no-store"});
+    const j = await r.json();
+    document.getElementById("status").textContent = JSON.stringify(j, null, 2);
+  } catch (e) {
+    document.getElementById("status").textContent = "error: " + e;
+  }
+}
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>

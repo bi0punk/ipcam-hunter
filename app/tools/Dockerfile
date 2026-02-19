@@ -8,12 +8,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
   && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /srv
+WORKDIR /app
 
-COPY dashboard/requirements.txt /srv/requirements.txt
+COPY dashboard/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
- && pip install --no-cache-dir -r /srv/requirements.txt
+ && pip install --no-cache-dir -r /app/requirements.txt
 
-COPY dashboard/app /srv/app
+COPY dashboard/ /app/
 
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8081"]
+EXPOSE 8081
+CMD ["python","-m","uvicorn","app.main:app","--host","0.0.0.0","--port","8081"]

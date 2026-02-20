@@ -5,10 +5,8 @@ services:
     container_name: waha
     ports:
       - "3000:3000"
-    env_file:
-      - .env
     environment:
-      - WAHA_API_KEY=${WAHA_API_KEY}
+      WAHA_API_KEY: "${WAHA_API_KEY}"
     volumes:
       - ./waha-sessions:/app/.sessions
     restart: unless-stopped
@@ -45,6 +43,8 @@ services:
       - LIVE_FILENAME=live.jpg
       - STATUS_FILENAME=status.json
       - MJPEG_FPS=8
+      - CAM_RTSP_URL_PREVIEW=${CAM_RTSP_URL_PREVIEW}
+      
     ports:
       - "8081:8081"
     volumes:

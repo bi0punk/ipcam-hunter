@@ -1,46 +1,352 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>ROI Dashboard</title>
+
+  <!-- Bootstrap 5 (CDN) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
   <style>
-    body { font-family: system-ui, sans-serif; background:#0b0f14; color:#e6edf3; margin:0; }
-    .wrap { display:grid; grid-template-columns: 1fr 360px; gap:12px; padding:12px; }
-    .card { background:#111826; border:1px solid #1f2a37; border-radius:12px; padding:12px; }
-    .title { font-weight:700; margin:0 0 8px 0; }
-    .stat { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; white-space:pre-wrap; }
-    img, .video { width:100%; border-radius:12px; border:1px solid #1f2a37; background:#000; }
-    .hint { opacity:.8; font-size:12px; }
+    :root{
+      --bg0:#070b14;
+      --bg1:#0b1220;
+      --card:#0f1b33;
+      --border:#1f2a44;
+      --text:#e5e7eb;
+      --muted:#9aa4b2;
+      --accent:#66e3ff;
+      --accent2:#7c3aed;
+      --ok:#22c55e;
+      --warn:#f59e0b;
+      --bad:#ef4444;
+    }
+
+    body{
+      background: radial-gradient(1200px 800px at 20% 10%, #0d1b3a 0%, var(--bg0) 45%, #060813 100%);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+
+    .topbar{
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      background: rgba(9,13,26,.75);
+      backdrop-filter: blur(8px);
+    }
+
+    .brand-dot{
+      width:10px;height:10px;border-radius:999px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      box-shadow: 0 0 18px rgba(102,227,255,.35);
+      display:inline-block;
+      margin-right:.5rem;
+    }
+
+    .cardx{
+      background: linear-gradient(180deg, rgba(15,27,51,.92), rgba(11,18,32,.92));
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 18px;
+      box-shadow: 0 10px 40px rgba(0,0,0,.35);
+    }
+
+    .cardx-header{
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+
+    .mjpeg-frame{
+      width:100%;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: #050811;
+      box-shadow: 0 0 0 1px rgba(102,227,255,.10) inset, 0 20px 60px rgba(0,0,0,.35);
+    }
+
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: .92rem;
+    }
+
+    .kpi{
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 14px;
+      background: rgba(5,8,17,.55);
+      padding: 10px 12px;
+      min-height: 70px;
+    }
+    .kpi .label{ color: var(--muted); font-size: .80rem; }
+    .kpi .value{ font-size: 1.15rem; font-weight: 700; letter-spacing: .2px; }
+
+    .hint{
+      color: var(--muted);
+      font-size: .88rem;
+    }
+
+    .pill{
+      display:inline-flex; align-items:center; gap:.35rem;
+      padding:.18rem .55rem;
+      border-radius: 999px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.04);
+      font-size:.82rem;
+      color: var(--muted);
+    }
+
+    .dot{
+      width:8px; height:8px; border-radius:999px; display:inline-block;
+      background: var(--warn);
+      box-shadow: 0 0 12px rgba(245,158,11,.35);
+    }
+    .dot.ok{ background: var(--ok); box-shadow: 0 0 12px rgba(34,197,94,.30); }
+    .dot.bad{ background: var(--bad); box-shadow: 0 0 12px rgba(239,68,68,.30); }
+
+    a { color: #93c5fd; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .prebox{
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 14px;
+      padding: 10px 12px;
+      background: rgba(5,8,17,.55);
+      max-height: 52vh;
+      overflow:auto;
+    }
+
+    .divider{
+      height:1px; background: rgba(255,255,255,.06); margin: 10px 0;
+    }
   </style>
 </head>
-<body>
-  <div class="wrap">
-    <div class="card">
-      <p class="title">Live</p>
-      <!-- MJPEG (más fluido). Si falla, cambia src a /api/live.jpg y refresca con JS -->
-      <img class="video" src="/api/live.mjpeg" alt="live stream" />
-      <p class="hint">Si no aparece nada, espera a que el worker escriba events/live.jpg</p>
-    </div>
 
-    <div class="card">
-      <p class="title">Status</p>
-      <div id="status" class="stat">cargando...</div>
+<body>
+  <!-- Top bar -->
+  <div class="topbar py-3">
+    <div class="container-fluid px-4 d-flex flex-wrap align-items-center justify-content-between gap-3">
+      <div class="d-flex align-items-center">
+        <span class="brand-dot"></span>
+        <div>
+          <div class="fw-bold">ROI Dashboard</div>
+          <div class="hint">MJPEG + estado en tiempo real</div>
+        </div>
+      </div>
+
+      <div class="d-flex align-items-center gap-2">
+        <span class="pill"><span id="dotLive" class="dot"></span> <span id="liveState">LIVE</span></span>
+        <span class="pill"><span id="dotStatus" class="dot"></span> <span id="statusState">STATUS</span></span>
+        <span class="pill mono" id="clock">--:--:--</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="container-fluid px-4 py-4">
+    <div class="row g-4">
+      <!-- Left: Live -->
+      <div class="col-12 col-xl-8">
+        <div class="cardx">
+          <div class="cardx-header px-4 py-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div>
+              <div class="h5 mb-0">Live (MJPEG)</div>
+              <div class="hint">Si queda negro: revisa RTSP en el contenedor (CAM_RTSP_URL_PREVIEW), credenciales y RTSP 554.</div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <a class="btn btn-sm btn-outline-info" href="/api/mjpeg" target="_blank">Abrir MJPEG</a>
+              <a class="btn btn-sm btn-outline-primary" href="/api/snapshot.jpg" target="_blank">Snapshot</a>
+            </div>
+          </div>
+
+          <div class="px-4 py-3">
+            <!-- OJO: endpoint correcto -->
+            <img id="mjpeg" class="mjpeg-frame" src="/api/mjpeg" alt="Live stream (MJPEG)"/>
+
+            <div class="mt-3 d-flex flex-wrap align-items-center gap-2">
+              <span class="pill mono">GET /api/mjpeg</span>
+              <span class="pill mono">GET /api/snapshot.jpg</span>
+              <span class="hint ms-auto">Tip: si el navegador cachea, recarga con Ctrl+F5.</span>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- KPIs -->
+            <div class="row g-3">
+              <div class="col-6 col-lg-3">
+                <div class="kpi">
+                  <div class="label">inside_count</div>
+                  <div class="value mono" id="kpiInside">-</div>
+                </div>
+              </div>
+              <div class="col-6 col-lg-3">
+                <div class="kpi">
+                  <div class="label">max_dwell_s</div>
+                  <div class="value mono" id="kpiDwell">-</div>
+                </div>
+              </div>
+              <div class="col-6 col-lg-3">
+                <div class="kpi">
+                  <div class="label">infer_fps</div>
+                  <div class="value mono" id="kpiFps">-</div>
+                </div>
+              </div>
+              <div class="col-6 col-lg-3">
+                <div class="kpi">
+                  <div class="label">grab_frame_age_ms</div>
+                  <div class="value mono" id="kpiAge">-</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-3 hint">
+              Estado de evento: <span class="mono" id="lastEvent">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Status -->
+      <div class="col-12 col-xl-4">
+        <div class="cardx">
+          <div class="cardx-header px-4 py-3 d-flex align-items-center justify-content-between">
+            <div>
+              <div class="h5 mb-0">Status</div>
+              <div class="hint">Refresco cada 1s (no-store)</div>
+            </div>
+            <a class="btn btn-sm btn-outline-secondary" href="/api/status" target="_blank">Ver JSON</a>
+          </div>
+
+          <div class="px-4 py-3">
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              <span class="pill mono" id="pillRoi">roi: -</span>
+              <span class="pill mono" id="pillTs">ts: -</span>
+            </div>
+
+            <div class="prebox mono">
+              <pre id="status" class="mb-0">{}</pre>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="hint">
+              Si <span class="mono">/api/snapshot.jpg</span> descarga texto y no JPEG, el endpoint está devolviendo error/JSON.
+              (MJPEG puede funcionar igual).
+            </div>
+          </div>
+        </div>
+
+        <!-- Optional: still snapshot box (si quieres verlo dentro de la UI) -->
+        <div class="cardx mt-4">
+          <div class="cardx-header px-4 py-3 d-flex align-items-center justify-content-between">
+            <div>
+              <div class="h6 mb-0">Still Snapshot (opcional)</div>
+              <div class="hint">Se refresca cada 3s (si el endpoint realmente devuelve JPEG)</div>
+            </div>
+            <button class="btn btn-sm btn-outline-warning" id="btnToggleStill">Toggle</button>
+          </div>
+          <div class="px-4 py-3">
+            <img id="still" class="mjpeg-frame" style="display:none" alt="Snapshot"/>
+            <div class="hint mt-2 mono" id="stillMsg">Desactivado</div>
+          </div>
+        </div>
+
+      </div>
     </div>
   </div>
 
 <script>
-async function poll() {
-  try {
-    const r = await fetch("/api/status", {cache:"no-store"});
-    const j = await r.json();
-    document.getElementById("status").textContent = JSON.stringify(j, null, 2);
-  } catch (e) {
-    document.getElementById("status").textContent = "error: " + e;
+  const elStatus = document.getElementById('status');
+  const dotLive = document.getElementById('dotLive');
+  const dotStatus = document.getElementById('dotStatus');
+  const liveState = document.getElementById('liveState');
+  const statusState = document.getElementById('statusState');
+
+  const kpiInside = document.getElementById('kpiInside');
+  const kpiDwell = document.getElementById('kpiDwell');
+  const kpiFps = document.getElementById('kpiFps');
+  const kpiAge = document.getElementById('kpiAge');
+  const lastEvent = document.getElementById('lastEvent');
+
+  const pillRoi = document.getElementById('pillRoi');
+  const pillTs = document.getElementById('pillTs');
+  const clock = document.getElementById('clock');
+
+  const still = document.getElementById('still');
+  const stillMsg = document.getElementById('stillMsg');
+  const btnToggleStill = document.getElementById('btnToggleStill');
+
+  let stillEnabled = false;
+  let stillTimer = null;
+
+  function setDot(el, state){
+    el.classList.remove('ok','bad');
+    if(state === 'ok') el.classList.add('ok');
+    else if(state === 'bad') el.classList.add('bad');
   }
-}
-poll();
-setInterval(poll, 1000);
+
+  // Reloj local simple
+  setInterval(() => {
+    const d = new Date();
+    clock.textContent = d.toLocaleTimeString();
+  }, 500);
+
+  async function refreshStatus(){
+    try{
+      const r = await fetch('/api/status', { cache:'no-store' });
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const j = await r.json();
+      elStatus.textContent = JSON.stringify(j, null, 2);
+
+      setDot(dotStatus, 'ok');
+      statusState.textContent = 'STATUS OK';
+
+      // KPIs (con fallback seguro)
+      kpiInside.textContent = (j.inside_count ?? '-') + '';
+      kpiDwell.textContent  = (j.max_dwell_s  ?? '-') + '';
+      kpiFps.textContent    = (j.infer_fps    ?? '-') + '';
+      kpiAge.textContent    = (j.grab_frame_age_ms ?? '-') + '';
+      lastEvent.textContent = (j.last_event ?? '-') + '';
+
+      pillRoi.textContent = `roi: ${j.roi ?? '-'}`;
+      pillTs.textContent  = `ts: ${j.ts ?? '-'}`;
+
+    }catch(e){
+      setDot(dotStatus, 'bad');
+      statusState.textContent = 'STATUS FAIL';
+    }
+  }
+
+  // MJPEG “liveness”: si la imagen falla (auth/rtsp down), muestra estado
+  const mjpeg = document.getElementById('mjpeg');
+  mjpeg.addEventListener('load', () => {
+    setDot(dotLive, 'ok');
+    liveState.textContent = 'LIVE OK';
+  });
+  mjpeg.addEventListener('error', () => {
+    setDot(dotLive, 'bad');
+    liveState.textContent = 'LIVE FAIL';
+  });
+
+  // Still snapshot toggle
+  function refreshStill(){
+    // cache bust para que no se quede pegado
+    still.src = `/api/snapshot.jpg?ts=${Date.now()}`;
+  }
+
+  btnToggleStill.addEventListener('click', () => {
+    stillEnabled = !stillEnabled;
+    if(stillEnabled){
+      still.style.display = 'block';
+      stillMsg.textContent = 'Activo (refresco 3s)';
+      refreshStill();
+      stillTimer = setInterval(refreshStill, 3000);
+    }else{
+      still.style.display = 'none';
+      stillMsg.textContent = 'Desactivado';
+      if(stillTimer) clearInterval(stillTimer);
+      stillTimer = null;
+    }
+  });
+
+  setInterval(refreshStatus, 1000);
+  refreshStatus();
 </script>
+
 </body>
 </html>

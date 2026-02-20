@@ -1,21 +1,39 @@
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
-from ..settings import Settings
-from ..services.mjpeg import mjpeg_generator
+import os
+from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse, Response
+
+from webapp.services.mjpeg import FrameHub
 
 router = APIRouter()
 
-@router.get("/live.jpg")
-def live_jpg():
-    s = Settings()
-    if not s.live_path.exists():
-        raise HTTPException(status_code=404, detail="live.jpg not found yet")
-    return FileResponse(str(s.live_path), media_type="image/jpeg")
+def _get_hub(app) -> FrameHub:
+    hub = getattr(app.state, "frame_hub", None)
+    if hub is None:
+        hub = FrameHub(
+            rtsp_url=os.environ.get("CAM_RTSP_URL_PREVIEW", ""),
+            preview_width=int(os.environ.get("PREVIEW_WIDTH", "640")),
+            preview_fps=int(os.environ.get("PREVIEW_FPS", "12")),
+            jpeg_quality=int(os.environ.get("JPEG_QUALITY", "80")),
+            overlay_json=os.environ.get("OVERLAY_JSON", "/data/events/overlay.json"),
+            status_json=os.environ.get("STATUS_JSON", "/data/events/status.json"),
+        )
+        hub.start()
+        app.state.frame_hub = hub
+    return hub
 
-@router.get("/live.mjpeg")
-def live_mjpeg():
-    s = Settings()
+@router.get("/mjpeg")
+def mjpeg(request: Request):
+    hub = _get_hub(request.app)
     return StreamingResponse(
-        mjpeg_generator(s.live_path, fps=s.mjpeg_fps, boundary=s.mjpeg_boundary),
-        media_type=f"multipart/x-mixed-replace; boundary={s.mjpeg_boundary}",
+        hub.mjpeg_iter(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-cache"},
     )
+
+@router.get("/snapshot.jpg")
+def snapshot(request: Request):
+    hub = _get_hub(request.app)
+    jpg, meta = hub.get()
+    if not jpg:
+        return Response(content=f"No frame yet. err={meta.err}".encode(), media_type="text/plain", status_code=503)
+    return Response(content=jpg, media_type="image/jpeg")

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 if [ ! -f .env ]; then
-  echo "No existe .env. Crea uno: cp .env.example .env"
+  echo "No existe .env. Crea uno: cp .example.env .env"
   exit 1
 fi
 mkdir -p waha-sessions events cache ultralytics

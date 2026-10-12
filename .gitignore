@@ -5,6 +5,16 @@ __pycache__/
 **/.env
 waha-sessions
 
+# Renders / data / caches at runtime
+events/
+cache/
+ultralytics/
+grabs/
+captures/
+*.jpg
+*.jpeg
+*.png
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

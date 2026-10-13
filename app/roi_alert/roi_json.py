@@ -22,8 +22,10 @@ def load_roi_from_json(json_path: Path, target_proc_shape_hw: tuple[int, int]) -
     if not roi_xyxy:
         raise ValueError("roi.json no trae roi_xyxy")
 
-    x1 = float(roi_xyxy["x1"]); y1 = float(roi_xyxy["y1"])
-    x2 = float(roi_xyxy["x2"]); y2 = float(roi_xyxy["y2"])
+    x1 = float(roi_xyxy["x1"])
+    y1 = float(roi_xyxy["y1"])
+    x2 = float(roi_xyxy["x2"])
+    y2 = float(roi_xyxy["y2"])
 
     tgt_h, tgt_w = target_proc_shape_hw
     sx = tgt_w / float(img_w)

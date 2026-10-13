@@ -68,6 +68,7 @@ def save_evidence(job: dict, ctx: EventContext) -> Path | None:
 
     saved_ok = False
     skip_send = False
+    drawn: np.ndarray | None = None
 
     if ctx.evidence_mode == "isapi":
         try:
@@ -86,11 +87,12 @@ def save_evidence(job: dict, ctx: EventContext) -> Path | None:
         out_img = frame_p
         if ctx.save_annotated:
             out_img = draw_overlay(frame_p, ctx.roi_points, tracks, dwell_map, iso_time)
+            drawn = out_img  # reutilizar para el annot (evita segundo dibujo)
         cv2.imwrite(str(jpg_path), out_img, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
 
     if ctx.save_annotated:
         try:
-            over = draw_overlay(frame_p, ctx.roi_points, tracks, dwell_map, iso_time)
+            over = drawn if drawn is not None else draw_overlay(frame_p, ctx.roi_points, tracks, dwell_map, iso_time)
             cv2.imwrite(str(annot_path), over, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
         except Exception as e:
             print(f"[annot][warn] no pude guardar overlay: {e}")

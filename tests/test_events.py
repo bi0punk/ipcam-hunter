@@ -83,6 +83,21 @@ def test_save_evidence_sin_annot(tmp_path, sample_frame):
     assert not (tmp_path / "20260101_120000_tid7_zona_1_annot.jpg").exists()
 
 
+def test_save_evidence_rtsp_dibuja_overlay_una_vez(tmp_path, sample_frame, monkeypatch):
+    calls = {"n": 0}
+    real = events.draw_overlay
+
+    def counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(events, "draw_overlay", counting)
+    frame = sample_frame(value=100)
+    ctx = _ctx(tmp_path, frame, save_annotated=True)
+    save_evidence(_job(frame), ctx)
+    assert calls["n"] == 1  # jpg y annot comparten el dibujo
+
+
 def test_save_evidence_isapi_usa_snapshot(tmp_path, sample_frame, monkeypatch):
     jpeg = b"\xff\xd8isapi-bytes"
     monkeypatch.setattr(events, "fetch_isapi_snapshot", lambda *a, **k: jpeg)

@@ -26,7 +26,8 @@ logic:
 
 whatsapp:
   session: "default"
-  chat_id: "120363047294315024@g.us"
+  # chat_id del grupo: definir por entorno WAHA_CHAT_ID (.env), NO commitear IDs reales.
+  chat_id: ""
   caption_template: "Alerta: persona en {roi} por {dwell:.1f}s | {ts}"
 
 storage:
@@ -34,10 +35,13 @@ storage:
   save_annotated: true       # guarda evidencia anotada SOLO en evento
 
 evidence:
-  mode: "isapi"
+  # "rtsp" = usa el frame re-escalado (default seguro, sin red extra).
+  # "isapi" = snapshot HQ; requiere ISAPI_URL/USER/PASS en .env (si faltan, cae a rtsp).
+  mode: "rtsp"
   timeout_s: 4
   fallback_to_rtsp: true
 
 isapi:
-  url: "http://192.168.1.64/ISAPI/Streaming/channels/101/picture"
+  # URL se define por entorno ISAPI_URL (.env). Vacio = deshabilitado.
+  url: ""
   auth: "digest"

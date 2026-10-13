@@ -50,7 +50,8 @@ class LatestFrameGrabber:
                 cap = cv2.VideoCapture(self.rtsp)
                 try:
                     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # no siempre aplica, pero ayuda
-                except Exception:
+                # best effort: no hay accion posible si falla
+                except Exception:  # nosec B110
                     pass
 
                 if not cap.isOpened():

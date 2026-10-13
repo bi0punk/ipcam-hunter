@@ -11,7 +11,8 @@ import yaml
 try:
     from dotenv import load_dotenv
     load_dotenv()
-except Exception:
+# dotenv es opcional
+except Exception:  # nosec B110
     pass
 
 

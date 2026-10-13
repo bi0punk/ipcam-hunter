@@ -102,7 +102,8 @@ class FrameHub:
         try:
             if cap:
                 cap.release()
-        except Exception:
+        # liberar captura es best effort
+        except Exception:  # nosec B110
             pass
 
     def _run(self) -> None:

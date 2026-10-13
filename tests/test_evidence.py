@@ -3,7 +3,6 @@ import requests
 
 from roi_alert.evidence import fetch_isapi_snapshot
 
-
 JPEG_HEAD = b"\xff\xd8\xff\xe0resto-del-jpeg"
 NOT_JPEG = b"<html>error</html>"
 

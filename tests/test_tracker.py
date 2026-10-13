@@ -1,4 +1,3 @@
-import pytest
 
 from roi_alert.tracker import IoUTracker, Track
 from roi_alert.vision import iou

@@ -3,7 +3,6 @@ import pytest
 
 from roi_alert.vision import centroid, draw_overlay, iou, point_in_roi
 
-
 # ---------- iou ----------
 
 def test_iou_box_identica_es_1():

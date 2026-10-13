@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pytest
-
 from roi_alert.cfg import load_cfg, pick_rtsp, resolve_events_dir
 
 

@@ -1,23 +1,113 @@
-import json
 import os
-import queue
-import threading
 import time
 from pathlib import Path
+from typing import Any
 
-import cv2
 import numpy as np
 from ultralytics import YOLO
 
 from .cfg import load_cfg, pick_rtsp, resolve_events_dir
-from .evidence import fetch_isapi_snapshot
+from .dwell import evaluate_dwell, inside_stats
+from .events import (
+    EventContext,
+    EventWorker,
+    build_overlay_payload,
+    write_overlay_json,
+    write_status_json,
+)
 from .roi_json import load_roi_from_json
 from .rtsp import LatestFrameGrabber
 from .tracker import IoUTracker
 from .types import BBox
-from .utils import iso_time, now_ts, safe_write_json
-from .vision import centroid, draw_overlay, point_in_roi
+from .utils import iso_time, now_ts
 from .waha import WahaClient
+
+
+def _detect(model, frame_p: np.ndarray, conf_thres: float, detect_every: int, frame_idx: int) -> list[BBox]:
+    """Detalle YOLO cada `detect_every` frames; devuelve bboxes de personas."""
+    if frame_idx % detect_every != 0:
+        return []
+    res = model.predict(frame_p, conf=conf_thres, classes=[0], verbose=False)[0]
+    if res.boxes is None or len(res.boxes) == 0:
+        return []
+    xyxy = res.boxes.xyxy.cpu().numpy()
+    return [(float(x1), float(y1), float(x2), float(y2)) for x1, y1, x2, y2 in xyxy]
+
+
+def _infer_count(infer_count: int, detect_every: int, frame_idx: int) -> int:
+    """Conserva la semántica original: un intento de inferencia por frame elegible."""
+    if frame_idx % detect_every == 0:
+        return infer_count + 1
+    return infer_count
+
+
+def _make_job(stamp: str, ts_iso: str, roi_name: str, track, dwell: float, frame_p, tracks, dwell_map) -> dict:
+    return {
+        "stamp": stamp,
+        "ts_iso": ts_iso,
+        "roi": roi_name,
+        "tid": track.tid,
+        "dwell": dwell,
+        "frame_p": frame_p,
+        "tracks": tracks,
+        "dwell_map": dwell_map,
+    }
+
+
+def _wait_first_frame(grabber, timeout_s: float = 10.0) -> tuple[np.ndarray | None, tuple[int, int] | None]:
+    """Espera el primer frame para conocer el shape de proceso (para ROI json)."""
+    t0 = now_ts()
+    frame_p: np.ndarray | None = None
+    proc_shape: tuple[int, int] | None = None
+    while proc_shape is None and (now_ts() - t0) < timeout_s:
+        frame_p, _, _, proc_shape = grabber.get_latest()
+        time.sleep(0.1)
+    return frame_p, proc_shape
+
+
+def _resolve_roi(cfg: dict, proc_shape: tuple[int, int], default_points: np.ndarray) -> np.ndarray:
+    roi_cfg = cfg.get("roi", {}) or {}
+    if not bool(roi_cfg.get("from_json", False)):
+        return default_points
+    json_path = Path(str(roi_cfg.get("json_path", "roi.json")))
+    try:
+        pts = load_roi_from_json(json_path, target_proc_shape_hw=proc_shape)
+        print(f"[roi] cargado desde {json_path} -> points={pts.tolist()}")
+        return pts
+    except Exception as e:
+        print(f"[roi][warn] no pude cargar roi.json ({json_path}): {e}. Usando roi.points del config.")
+        return default_points
+
+
+def build_status_payload(
+    ts_iso: str,
+    roi_name: str,
+    tracks,
+    dwell_map: dict[int, float],
+    cooldown_sec: float,
+    last_event_name: str | None,
+    chat_id: str,
+    infer_fps: float,
+    process_w: int,
+    events_dir: Path,
+    cfg_path: Path,
+    grab_frame_age_ms: int,
+) -> dict[str, Any]:
+    inside_count, max_dwell = inside_stats(tracks, dwell_map)
+    return {
+        "ts": ts_iso,
+        "roi": roi_name,
+        "inside_count": inside_count,
+        "max_dwell_s": round(max_dwell, 2),
+        "cooldown_s": cooldown_sec,
+        "last_event": last_event_name,
+        "chat_id": chat_id,
+        "infer_fps": round(infer_fps, 2),
+        "process_width": process_w,
+        "events_dir": str(events_dir),
+        "config_path": str(cfg_path),
+        "grab_frame_age_ms": grab_frame_age_ms,
+    }
 
 
 def run(cfg_path: Path) -> None:
@@ -30,12 +120,13 @@ def run(cfg_path: Path) -> None:
     if not rtsp:
         raise SystemExit("Falta RTSP. Define CAM_RTSP_URL (y opcional CAM_RTSP_URL_SUB)")
 
-    process_w = int(cfg["camera"]["process_width"])
-    fps_limit = float(cfg["camera"]["fps_limit"])
-    capture_fps_limit = float(cfg["camera"].get("capture_fps_limit", max(12.0, fps_limit)))
-    backoff = float(cfg["camera"]["reconnect_backoff_sec"])
-    detect_every = int(cfg["camera"].get("detect_every_n_frames", 1))
-    overlay_hz = float(cfg["camera"].get("overlay_hz", 10))
+    camera = cfg["camera"]
+    process_w = int(camera["process_width"])
+    fps_limit = float(camera["fps_limit"])
+    capture_fps_limit = float(camera.get("capture_fps_limit", max(12.0, fps_limit)))
+    backoff = float(camera["reconnect_backoff_sec"])
+    detect_every = int(camera.get("detect_every_n_frames", 1))
+    overlay_hz = float(camera.get("overlay_hz", 10))
 
     weights = cfg["model"]["yolo_weights"]
     conf_thres = float(cfg["model"]["conf_thres"])
@@ -87,93 +178,30 @@ def run(cfg_path: Path) -> None:
     grabber = LatestFrameGrabber(rtsp, process_w, backoff, capture_fps_limit)
     grabber.start()
 
-    # Esperar primer frame para poder cargar ROI desde roi.json (opcional)
-    frame0, _, _, proc_shape = None, 0.0, None, None
-    t0 = now_ts()
-    while proc_shape is None and (now_ts() - t0) < 10.0:
-        frame0, _, _, proc_shape = grabber.get_latest()
-        time.sleep(0.1)
-
+    _frame0, proc_shape = _wait_first_frame(grabber)
     if proc_shape is None:
         raise SystemExit("No pude obtener primer frame desde RTSP (10s). Revisa RTSP/credenciales/red.")
 
-    roi_cfg = cfg.get("roi", {}) or {}
-    if bool(roi_cfg.get("from_json", False)):
-        json_path = Path(str(roi_cfg.get("json_path", "roi.json")))
-        try:
-            roi_points = load_roi_from_json(json_path, target_proc_shape_hw=proc_shape)
-            print(f"[roi] cargado desde {json_path} -> points={roi_points.tolist()}")
-        except Exception as e:
-            print(f"[roi][warn] no pude cargar roi.json ({json_path}): {e}. Usando roi.points del config.")
-
+    roi_points = _resolve_roi(cfg, proc_shape, roi_points)
     print(f"[roi] name={roi_name} points={roi_points.tolist()} proc_shape(h,w)={proc_shape}")
 
-    # worker async para eventos
-    event_q: queue.Queue[dict] = queue.Queue(maxsize=10)
-
-    def event_worker():
-        while True:
-            job = event_q.get()
-            if job is None:
-                return
-            try:
-                ts_iso = job["ts_iso"]
-                stamp = job["stamp"]
-                roi = job["roi"]
-                tid = job["tid"]
-                dwell = job["dwell"]
-                frame_p = job["frame_p"]
-                tracks = job["tracks"]
-                dwell_map = job["dwell_map"]
-
-                base = f"{stamp}_tid{tid}_{roi}"
-                jpg_path = events_dir / f"{base}.jpg"
-                annot_path = events_dir / f"{base}_annot.jpg"
-
-                saved_ok = False
-                skip_send = False
-
-                if evidence_mode == "isapi":
-                    try:
-                        data = fetch_isapi_snapshot(isapi_url, isapi_user, isapi_pass, isapi_auth, evidence_timeout_s)
-                        jpg_path.write_bytes(data)
-                        saved_ok = True
-                        print(f"[evidence] isapi ok -> {jpg_path.name} ({len(data)} bytes)")
-                    except Exception as e:
-                        print(f"[evidence][warn] isapi fallo: {e}")
-                        if not fallback_to_rtsp:
-                            skip_send = True
-
-                if (not saved_ok) and (not skip_send):
-                    out_img = frame_p
-                    if save_annotated:
-                        out_img = draw_overlay(frame_p, roi_points, tracks, dwell_map, iso_time)
-                    cv2.imwrite(str(jpg_path), out_img, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
-
-                if save_annotated:
-                    try:
-                        over = draw_overlay(frame_p, roi_points, tracks, dwell_map, iso_time)
-                        cv2.imwrite(str(annot_path), over, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-                    except Exception as e:
-                        print(f"[annot][warn] no pude guardar overlay: {e}")
-
-                caption = caption_tpl.format(roi=roi, dwell=dwell, ts=ts_iso)
-
-                if skip_send:
-                    print("[alert][warn] no evidencia y fallback_to_rtsp=false -> no envío")
-                else:
-                    try:
-                        resp = waha.send_image_b64(chat_id, jpg_path, caption)
-                        print(f"[alert] enviado {jpg_path.name} -> {chat_id} | resp={json.dumps(resp)[:200]}")
-                    except Exception as e:
-                        print(f"[alert][error] fallo envío WhatsApp: {e}")
-
-            except Exception as e:
-                print(f"[worker][error] {e}")
-            finally:
-                event_q.task_done()
-
-    threading.Thread(target=event_worker, daemon=True).start()
+    ctx = EventContext(
+        events_dir=events_dir,
+        evidence_mode=evidence_mode,
+        isapi_url=isapi_url,
+        isapi_user=isapi_user,
+        isapi_pass=isapi_pass,
+        isapi_auth=isapi_auth,
+        evidence_timeout_s=evidence_timeout_s,
+        fallback_to_rtsp=fallback_to_rtsp,
+        save_annotated=save_annotated,
+        caption_template=caption_tpl,
+        roi_points=roi_points,
+        chat_id=chat_id,
+        waha=waha,
+    )
+    worker = EventWorker(ctx, maxsize=10)
+    worker.start()
 
     last_alert_ts = 0.0
     last_status_write = 0.0
@@ -194,120 +222,47 @@ def run(cfg_path: Path) -> None:
         grab_last_ts = fts
         ts = now_ts()
 
-        dets: list[BBox] = []
-        if frame_idx % detect_every == 0:
-            res = model.predict(frame_p, conf=conf_thres, classes=[0], verbose=False)[0]
-            if res.boxes is not None and len(res.boxes) > 0:
-                xyxy = res.boxes.xyxy.cpu().numpy()
-                for x1, y1, x2, y2 in xyxy:
-                    dets.append((float(x1), float(y1), float(x2), float(y2)))
-            infer_count += 1
+        dets = _detect(model, frame_p, conf_thres, detect_every, frame_idx)
+        infer_count = _infer_count(infer_count, detect_every, frame_idx)
 
         tracks = tracker.update(dets, ts)
 
-        dwell_map: dict[int, float] = {}
-        triggered = False
-        triggered_track = None
-        triggered_dwell = 0.0
+        result = evaluate_dwell(tracks, roi_points, ts, dwell_sec, cooldown_sec, last_alert_ts)
+        last_alert_ts = result.new_alert_ts
 
-        for tr in tracks:
-            c = centroid(tr.bbox)
-            inside = point_in_roi(c, roi_points)
-
-            if inside:
-                if tr.in_roi_since is None:
-                    tr.in_roi_since = ts
-                    tr.fired = False
-                dwell = ts - tr.in_roi_since
-                dwell_map[tr.tid] = dwell
-
-                if (not tr.fired) and (dwell >= dwell_sec):
-                    if (ts - last_alert_ts) >= cooldown_sec:
-                        triggered = True
-                        triggered_track = tr
-                        triggered_dwell = dwell
-                        tr.fired = True
-                        last_alert_ts = ts
-            else:
-                tr.in_roi_since = None
-                tr.fired = False
-
-        if triggered and triggered_track is not None:
+        if result.triggered_track is not None:
             stamp = time.strftime("%Y%m%d_%H%M%S")
-            job = {
-                "stamp": stamp,
-                "ts_iso": iso_time(),
-                "roi": roi_name,
-                "tid": triggered_track.tid,
-                "dwell": triggered_dwell,
-                "frame_p": frame_p,
-                "tracks": tracks,
-                "dwell_map": dwell_map
-            }
-            try:
-                event_q.put_nowait(job)
-                last_event_name = f"{stamp}_tid{triggered_track.tid}_{roi_name}.jpg"
-            except queue.Full:
-                print("[worker][warn] cola llena, dropeo evento (evitar bloqueo)")
+            job = _make_job(stamp, iso_time(), roi_name, result.triggered_track, result.triggered_dwell,
+                            frame_p, tracks, result.dwell_map)
+            if worker.submit(job):
+                last_event_name = f"{stamp}_tid{result.triggered_track.tid}_{roi_name}.jpg"
 
-        # overlay.json
         if (ts - last_overlay_write) >= (1.0 / max(1.0, overlay_hz)):
-            out = {
-                "ts": iso_time(),
-                "roi": {"name": roi_name, "points": roi_points.tolist()},
-                "frame": {
-                    "orig_hw": list(orig_shape) if orig_shape else None,
-                    "proc_hw": list(proc_shape) if proc_shape else None,
-                },
-                "tracks": []
-            }
-            for tr in tracks:
-                c = centroid(tr.bbox)
-                inside = point_in_roi(c, roi_points)
-                out["tracks"].append({
-                    "id": tr.tid,
-                    "bbox": [round(tr.bbox[0], 2), round(tr.bbox[1], 2), round(tr.bbox[2], 2), round(tr.bbox[3], 2)],
-                    "centroid": [int(c[0]), int(c[1])],
-                    "inside": bool(inside),
-                    "dwell_s": round(dwell_map.get(tr.tid, 0.0), 2)
-                })
-            try:
-                safe_write_json(events_dir / "overlay.json", out)
-            except Exception as e:
-                print(f"[overlay][error] {e}")
+            overlay_payload = build_overlay_payload(
+                iso_time(), roi_name, roi_points, orig_shape, proc_shape, tracks, result.dwell_map
+            )
+            write_overlay_json(events_dir / "overlay.json", overlay_payload)
             last_overlay_write = ts
 
-        # status.json
         if (ts - last_status_write) >= 1.0:
-            inside_count = 0
-            max_dwell = 0.0
-            for tr in tracks:
-                d = dwell_map.get(tr.tid, 0.0)
-                if d > 0:
-                    inside_count += 1
-                    max_dwell = max(max_dwell, d)
-
             dt = max(1e-6, ts - infer_t0)
             infer_fps = infer_count / dt
 
-            payload = {
-                "ts": iso_time(),
-                "roi": roi_name,
-                "inside_count": inside_count,
-                "max_dwell_s": round(max_dwell, 2),
-                "cooldown_s": cooldown_sec,
-                "last_event": last_event_name,
-                "chat_id": chat_id,
-                "infer_fps": round(infer_fps, 2),
-                "process_width": process_w,
-                "events_dir": str(events_dir),
-                "config_path": str(cfg_path),
-                "grab_frame_age_ms": int(max(0.0, (now_ts() - grab_last_ts)) * 1000),
-            }
-            try:
-                safe_write_json(events_dir / "status.json", payload)
-            except Exception as e:
-                print(f"[status][error] {e}")
+            payload = build_status_payload(
+                ts_iso=iso_time(),
+                roi_name=roi_name,
+                tracks=tracks,
+                dwell_map=result.dwell_map,
+                cooldown_sec=cooldown_sec,
+                last_event_name=last_event_name,
+                chat_id=chat_id,
+                infer_fps=infer_fps,
+                process_w=process_w,
+                events_dir=events_dir,
+                cfg_path=cfg_path,
+                grab_frame_age_ms=int(max(0.0, (now_ts() - grab_last_ts)) * 1000),
+            )
+            write_status_json(events_dir / "status.json", payload)
 
             last_status_write = ts
             infer_count = 0

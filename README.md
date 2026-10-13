@@ -13,6 +13,7 @@ Sistema de alertas de vigilancia por ROI con detección de personas vía YOLO so
 - [Stack](#stack)
 - [Estructura del repositorio](#estructura-del-repositorio)
 - [Instalación](#instalación)
+- [Desarrollo y calidad](#desarrollo-y-calidad)
 - [Uso](#uso)
 - [Login WhatsApp](#login-whatsapp)
 - [Obtener el chat_id del grupo](#obtener-el-chat_id-del-grupo)
@@ -69,11 +70,14 @@ flowchart TD
 ipcam-hunter/
 ├── app/
 │   ├── config.yaml             # Configuración del worker (roi, dwell, whatsapp)
-│   ├── requirements.txt
-│   ├── roi_dwell_alert.py      # Entry point del worker
-│   ├── roi_pick.py             # Dibuja ROI sobre frame RTSP
+│   ├── requirements.txt        # (compat Docker; fuente de verdad: pyproject.toml)
+│   ├── roi_dwell_alert.py      # Entry point del worker (script: roi-hunter)
+│   ├── roi_pick.py             # Dibuja ROI sobre frame RTSP (script: roi-pick)
 │   ├── roi_alert/
-│   │   ├── runner.py           # Orquesta captura + detección + dwell + envío
+│   │   ├── runner.py           # Orquestación: captura + detección + loop
+│   │   ├── settings.py         # Config unificada (env + config.yaml)
+│   │   ├── dwell.py            # Reglas de ROI: dwell, cooldown, stats
+│   │   ├── events.py           # Worker de eventos + evidencia/persistencia
 │   │   ├── rtsp.py             # LatestFrameGrabber (thread)
 │   │   ├── tracker.py          # IoUTracker
 │   │   ├── vision.py           # IoU, centroide, point_in_roi, overlay
@@ -83,7 +87,11 @@ ipcam-hunter/
 │   ├── tools/get_groups.py     # Obtener chat_id de grupos WhatsApp
 │   └── web/                    # Dashboard FastAPI
 │       ├── Dockerfile, requirements.txt
-│       └── webapp/ (main, routers, services MJPEG)
+│       └── webapp/ (main, routers, services overlay/streaming/mjpeg)
+├── tests/                      # pytest (roi_alert + webapp), con mocks
+├── docs/                       # migration.md, quality-report.md
+├── .github/workflows/ci.yml    # lint + typecheck + tests
+├── pyproject.toml              # deps, extras [dev]/[detect], ruff/mypy/pytest
 ├── docker/
 │   └── app/entrypoint.sh
 ├── scripts/
@@ -91,31 +99,59 @@ ipcam-hunter/
 │   └── create_roi.py
 ├── Dockerfile
 ├── docker-compose.yml
-├── .env.example (presente como .example.env)
+├── .example.env                # plantilla de entorno (copiar a .env)
 └── README.md
 ```
 
 ## Instalación
 
-1. Copia la plantilla de entorno y define la API key de WAHA:
+1. Copia la plantilla de entorno y rellena tus valores (no commitear `.env`):
 
 ```bash
 cp .example.env .env
-nano .env   # define WAHA_API_KEY
+nano .env   # CAM_RTSP_URL, WAHA_API_KEY, WAHA_CHAT_ID y, si aplica, ISAPI_*
 ```
 
-2. Configura `app/config.yaml`:
+2. Revisa `app/config.yaml` (viene con defaults seguros: sin credenciales ni
+   IDs reales). Los campos sensibles se resuelven por entorno desde `.env`:
 
-```bash
-cp app/config.docker.example.yaml app/config.yaml
-nano app/config.yaml  # rtsp_url, whatsapp.chat_id (grupo), whatsapp.api_key (=WAHA_API_KEY)
-```
+- `camera.rtsp_url` / `roi.points` / `logic.*` / `storage.*` → config.yaml
+- `CAM_RTSP_URL`, `WAHA_CHAT_ID`, `WAHA_API_KEY`, `ISAPI_*` → `.env`
 
 3. Levanta los servicios:
 
 ```bash
 bash scripts/compose_up.sh
 ```
+
+## Desarrollo y calidad
+
+El proyecto es un paquete instalable (PEP 517) definido en `pyproject.toml`.
+
+```bash
+# entorno + deps de desarrollo (sin torch/ultralytics: extras [detect])
+uv venv .venv
+uv pip install --python .venv/bin/python -e ".[dev]"
+
+# para ejecutar el worker real (YOLO/PyTorch CPU)
+uv pip install --python .venv/bin/python -e ".[detect]"
+```
+
+Calidad (todo verde en CI):
+
+```bash
+pytest -q                              # suite (mockea cv2/ultralytics/RTSP)
+ruff check .                           # lint
+mypy app/roi_alert app/web/webapp scripts
+vulture app scripts --min-confidence 60
+bandit -r app scripts                  # 0 issues
+```
+
+CI: `.github/workflows/ci.yml` (lint+typecheck y tests en Python 3.11).
+
+Documentación de soporte: [`docs/migration.md`](docs/migration.md)
+(requirements.txt → pyproject) y [`docs/quality-report.md`](docs/quality-report.md)
+(triage inicial de ruff/mypy/vulture/bandit/radon).
 
 ## Uso
 
@@ -158,13 +194,14 @@ evidence:
   fallback_to_rtsp: true
 
 isapi:
-  url: "http://192.168.1.64/ISAPI/Streaming/channels/101/picture"
+  url: ""          # se toma de ISAPI_URL en .env
   auth: "digest"
 ```
 
-2) En `.env` agrega credenciales:
+2) En `.env` agrega URL y credenciales:
 
 ```bash
+ISAPI_URL=http://TU_CAMARA/ISAPI/Streaming/channels/101/picture
 ISAPI_USER=admin
 ISAPI_PASS=tu_password
 ```
@@ -197,18 +234,25 @@ El dashboard:
 
 ## Configuración
 
-Variables de entorno (ver `.example.env`):
+Variables de entorno (ver `.example.env`). Ninguna credencial real vive en el
+repositorio: `app/config.yaml` trae defaults seguros y todo lo sensible se lee
+de `.env` (que está en `.gitignore`).
 
 | Variable | Descripción |
 |---|---|
 | `CAM_RTSP_URL` | URL del stream RTSP de la cámara |
+| `CAM_RTSP_URL_SUB` | Substream (tiene prioridad sobre `CAM_RTSP_URL`) |
+| `CAM_RTSP_URL_PREVIEW` | Stream para el dashboard MJPEG |
 | `ISAPI_URL` | URL ISAPI de snapshot (si se usa modo isapi) |
 | `ISAPI_AUTH` | Tipo de auth ISAPI (`digest` o `basic`) |
 | `ISAPI_USER` / `ISAPI_PASS` | Credenciales ISAPI |
 | `WAHA_URL` | URL base de WAHA (default `http://waha:3000`) |
 | `WAHA_API_KEY` | API Key de WAHA |
 | `WAHA_SESSION` | Sesión de WhatsApp (`default`) |
-| `WAHA_CHAT_ID` | chatId del grupo (`...@g.us`) |
+| `WAHA_CHAT_ID` | chatId del grupo (`...@g.us`); requerido |
+| `EVENTS_DIR` | Directorio de eventos/evidencia (default `/data/events`) |
+| `CONFIG_PATH` | Ruta a `config.yaml` (default `/app/config.yaml`) |
+| `PREVIEW_WIDTH` / `PREVIEW_FPS` / `JPEG_QUALITY` | Ajustes del dashboard MJPEG |
 
 Parámetros principales de `app/config.yaml`: `dwell_seconds` (2.0), `cooldown_seconds` (60), `yolo_weights` (yolov8n.pt), `conf_thres` (0.35), puntos del ROI, y plantilla de caption de WhatsApp.
 

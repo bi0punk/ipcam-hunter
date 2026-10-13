@@ -1,5 +1,5 @@
 import requests
-from requests.auth import HTTPBasicAuth, HTTPDigestAuth
+from requests.auth import AuthBase, HTTPBasicAuth, HTTPDigestAuth
 
 
 def fetch_isapi_snapshot(
@@ -10,6 +10,7 @@ def fetch_isapi_snapshot(
     timeout_s: float = 4.0
 ) -> bytes:
     auth_mode = (auth_mode or "digest").strip().lower()
+    auth: AuthBase
     if auth_mode == "basic":
         auth = HTTPBasicAuth(username, password)
     else:

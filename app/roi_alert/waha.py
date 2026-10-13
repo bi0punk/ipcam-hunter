@@ -1,5 +1,6 @@
 import base64
 from pathlib import Path
+from typing import Any
 
 import requests
 
@@ -18,7 +19,7 @@ class WahaClient:
 
     def send_image_b64(self, chat_id: str, jpeg_path: Path, caption: str = "") -> dict:
         data_b64 = base64.b64encode(jpeg_path.read_bytes()).decode("ascii")
-        payload = {
+        payload: dict[str, Any] = {
             "session": self.session,
             "chatId": chat_id,
             "file": {

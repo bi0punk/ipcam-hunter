@@ -30,7 +30,7 @@ jobs:
       - name: Bandit (seguridad)
         run: bandit -r app scripts -q || true
       - name: Mypy typecheck
-        run: mypy roi_alert webapp
+        run: mypy app/roi_alert app/web/webapp scripts
 
   test:
     name: tests (py3.11)

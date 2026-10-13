@@ -27,7 +27,7 @@ class IoUTracker:
 
         assigned = set()
 
-        for tid, tr in list(self.tracks.items()):
+        for _tid, tr in list(self.tracks.items()):
             best_iou = 0.0
             best_j = None
             for j, bb in enumerate(dets):

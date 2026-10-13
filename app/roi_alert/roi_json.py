@@ -1,11 +1,10 @@
 import json
 from pathlib import Path
-from typing import Tuple
 
 import numpy as np
 
 
-def load_roi_from_json(json_path: Path, target_proc_shape_hw: Tuple[int, int]) -> np.ndarray:
+def load_roi_from_json(json_path: Path, target_proc_shape_hw: tuple[int, int]) -> np.ndarray:
     """
     Soporta roi.json tipo:
     {

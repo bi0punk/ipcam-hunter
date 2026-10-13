@@ -1,4 +1,3 @@
-from typing import Dict, List, Tuple
 
 import cv2
 import numpy as np
@@ -21,16 +20,16 @@ def iou(a: BBox, b: BBox) -> float:
     return inter / denom if denom > 0 else 0.0
 
 
-def centroid(bb: BBox) -> Tuple[int, int]:
+def centroid(bb: BBox) -> tuple[int, int]:
     x1, y1, x2, y2 = bb
     return (int((x1 + x2) / 2.0), int((y1 + y2) / 2.0))
 
 
-def point_in_roi(pt: Tuple[int, int], roi_pts: np.ndarray) -> bool:
+def point_in_roi(pt: tuple[int, int], roi_pts: np.ndarray) -> bool:
     return cv2.pointPolygonTest(roi_pts, pt, False) >= 0
 
 
-def draw_overlay(img: np.ndarray, roi_pts: np.ndarray, tracks: List, dwell_map: Dict[int, float], iso_time_fn) -> np.ndarray:
+def draw_overlay(img: np.ndarray, roi_pts: np.ndarray, tracks: list, dwell_map: dict[int, float], iso_time_fn) -> np.ndarray:
     """
     tracks: lista de Track (evitamos import circular aquí)
     iso_time_fn: función para timestamp en overlay

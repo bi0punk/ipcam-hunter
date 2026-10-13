@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional
 
 from .types import BBox
 from .vision import iou
@@ -10,7 +9,7 @@ class Track:
     tid: int
     bbox: BBox
     last_seen: float
-    in_roi_since: Optional[float] = None
+    in_roi_since: float | None = None
     fired: bool = False
 
 
@@ -19,9 +18,9 @@ class IoUTracker:
         self.match_thres = match_thres
         self.ttl_sec = ttl_sec
         self.next_id = 1
-        self.tracks: Dict[int, Track] = {}
+        self.tracks: dict[int, Track] = {}
 
-    def update(self, dets: List[BBox], ts: float) -> List[Track]:
+    def update(self, dets: list[BBox], ts: float) -> list[Track]:
         dead = [tid for tid, tr in self.tracks.items() if (ts - tr.last_seen) > self.ttl_sec]
         for tid in dead:
             del self.tracks[tid]

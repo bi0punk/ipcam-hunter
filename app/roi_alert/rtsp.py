@@ -1,6 +1,5 @@
 import threading
 import time
-from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -20,10 +19,10 @@ class LatestFrameGrabber:
         self.capture_fps_limit = max(1.0, capture_fps_limit)
 
         self._lock = threading.Lock()
-        self._frame: Optional[np.ndarray] = None
+        self._frame: np.ndarray | None = None
         self._frame_ts: float = 0.0
-        self._orig_shape: Optional[Tuple[int, int]] = None  # (h,w)
-        self._proc_shape: Optional[Tuple[int, int]] = None  # (h,w)
+        self._orig_shape: tuple[int, int] | None = None  # (h,w)
+        self._proc_shape: tuple[int, int] | None = None  # (h,w)
 
         self._stop = threading.Event()
         self._thr = threading.Thread(target=self._run, daemon=True)

@@ -1,3 +1,2 @@
-from typing import Tuple
 
-BBox = Tuple[float, float, float, float]  # x1, y1, x2, y2
+BBox = tuple[float, float, float, float]  # x1, y1, x2, y2

@@ -1,0 +1,96 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ipcam-hunter"
+version = "0.1.0"
+description = "Sistema de alertas de vigilancia por ROI: detección YOLO sobre RTSP, alertas WhatsApp (WAHA) y dashboard web MJPEG."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "bi0punk", email = "systecinfo_cl@criptext.com" }]
+dependencies = [
+    "numpy>=1.26",
+    "opencv-python-headless>=4.8",
+    "PyYAML>=6.0",
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+    "fastapi==0.115.0",
+    "uvicorn[standard]==0.30.6",
+    "jinja2==3.1.4",
+]
+
+[project.optional-dependencies]
+# Extra pesado (YOLO/PyTorch CPU): no se instala por defecto; los tests lo mockean.
+detect = [
+    "torch",
+    "torchvision",
+    "ultralytics",
+]
+dev = [
+    "pytest>=8",
+    "pytest-mock>=3",
+    "httpx>=0.27",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "vulture>=2.14",
+    "bandit>=1.7",
+    "radon>=6.0",
+]
+
+[project.scripts]
+roi-hunter = "roi_dwell_alert:main"
+roi-pick = "roi_pick:main"
+
+[tool.setuptools]
+packages = ["roi_alert", "webapp", "webapp.routers", "webapp.services"]
+py-modules = ["roi_dwell_alert", "roi_pick"]
+
+[tool.setuptools.package-dir]
+"" = "app"
+"webapp" = "app/web/webapp"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+pythonpath = ["app", "app/web"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["roi_alert", "webapp", "roi_dwell_alert", "roi_pick"]
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["app", "app/web", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "W", "B"]
+ignore = [
+    "E501",        # líneas largas toleradas en logs/prints
+    "BLE001",      # except cegado es intencional en workers/entrypoints
+    "B904",        # no siempre toca raise-from en scripts cortos
+    "B008",        # FastAPI usa argumentos con default en routers
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["roi_alert", "webapp"]
+known-third-party = ["ultralytics"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "app:app/web"
+ignore_missing_imports = true
+follow_imports = "silent"
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unused_ignores = false

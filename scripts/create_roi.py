@@ -2,7 +2,9 @@
 import argparse
 import json
 import os
+
 import cv2
+
 
 def main():
     ap = argparse.ArgumentParser()

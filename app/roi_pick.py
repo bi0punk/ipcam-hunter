@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 
 import cv2
-import yaml
 import numpy as np
+import yaml
 
 # Soporte opcional: permite correr el script fuera de docker compose leyendo .env
 try:

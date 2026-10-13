@@ -1,5 +1,5 @@
 import requests
-from requests.auth import HTTPDigestAuth, HTTPBasicAuth
+from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 
 
 def fetch_isapi_snapshot(

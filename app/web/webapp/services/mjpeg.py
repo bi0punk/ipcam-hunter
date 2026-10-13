@@ -1,23 +1,22 @@
 import json
-import os
 import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
+from typing import Any
 
 import cv2
 import numpy as np
 
 
-def _read_json(path: Path) -> Dict[str, Any]:
+def _read_json(path: Path) -> dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
 
 
-def _extract_roi_poly(overlay: Dict[str, Any]) -> Optional[np.ndarray]:
+def _extract_roi_poly(overlay: dict[str, Any]) -> np.ndarray | None:
     """
     Soporta varios formatos posibles:
     - overlay["roi"]["points"] = [[x,y],...]
@@ -41,7 +40,7 @@ def _extract_roi_poly(overlay: Dict[str, Any]) -> Optional[np.ndarray]:
         return None
 
 
-def _extract_roi_rect(overlay: Dict[str, Any]) -> Optional[Tuple[int, int, int, int]]:
+def _extract_roi_rect(overlay: dict[str, Any]) -> tuple[int, int, int, int] | None:
     """
     Soporta:
     - roi_xyxy: {x1,y1,x2,y2}
@@ -94,10 +93,10 @@ class FrameHub:
         self.stale_ms_warn = int(stale_ms_warn)
 
         self._lock = threading.Lock()
-        self._last_jpeg: Optional[bytes] = None
+        self._last_jpeg: bytes | None = None
         self._meta = FrameMeta()
         self._stop = threading.Event()
-        self._thr: Optional[threading.Thread] = None
+        self._thr: threading.Thread | None = None
 
     def start(self) -> None:
         if self._thr and self._thr.is_alive():
@@ -111,7 +110,7 @@ class FrameHub:
         if self._thr:
             self._thr.join(timeout=2.0)
 
-    def get(self) -> Tuple[Optional[bytes], FrameMeta]:
+    def get(self) -> tuple[bytes | None, FrameMeta]:
         with self._lock:
             return self._last_jpeg, FrameMeta(**self._meta.__dict__)
 
@@ -184,7 +183,7 @@ class FrameHub:
 
         return out
 
-    def _encode_jpeg(self, frame: np.ndarray) -> Optional[bytes]:
+    def _encode_jpeg(self, frame: np.ndarray) -> bytes | None:
         ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality])
         if not ok:
             return None

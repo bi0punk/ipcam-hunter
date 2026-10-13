@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 
-def read_json(path: Path) -> Dict[str, Any]:
+def read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {"ok": False, "error": f"missing {path.name}"}
     try:

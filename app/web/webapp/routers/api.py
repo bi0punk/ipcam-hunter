@@ -1,6 +1,7 @@
 from fastapi import APIRouter
-from ..settings import Settings
+
 from ..services.status_store import read_json
+from ..settings import Settings
 
 router = APIRouter()
 

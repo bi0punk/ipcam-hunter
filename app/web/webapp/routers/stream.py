@@ -1,6 +1,7 @@
 import os
+
 from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import Response, StreamingResponse
 
 from webapp.services.mjpeg import FrameHub
 

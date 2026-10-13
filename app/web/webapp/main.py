@@ -1,7 +1,8 @@
 from fastapi import FastAPI
-from .routers.ui import router as ui_router
+
 from .routers.api import router as api_router
 from .routers.stream import router as stream_router
+from .routers.ui import router as ui_router
 
 
 def create_app() -> FastAPI:

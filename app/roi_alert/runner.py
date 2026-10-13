@@ -1,23 +1,22 @@
 import json
 import os
-import time
-import threading
 import queue
+import threading
+import time
 from pathlib import Path
-from typing import Dict, List
 
 import cv2
 import numpy as np
 from ultralytics import YOLO
 
-from .cfg import load_cfg, resolve_events_dir, pick_rtsp
+from .cfg import load_cfg, pick_rtsp, resolve_events_dir
 from .evidence import fetch_isapi_snapshot
 from .roi_json import load_roi_from_json
 from .rtsp import LatestFrameGrabber
 from .tracker import IoUTracker
 from .types import BBox
-from .utils import now_ts, iso_time, safe_write_json
-from .vision import centroid, point_in_roi, draw_overlay
+from .utils import iso_time, now_ts, safe_write_json
+from .vision import centroid, draw_overlay, point_in_roi
 from .waha import WahaClient
 
 
@@ -110,7 +109,7 @@ def run(cfg_path: Path) -> None:
     print(f"[roi] name={roi_name} points={roi_points.tolist()} proc_shape(h,w)={proc_shape}")
 
     # worker async para eventos
-    event_q: "queue.Queue[dict]" = queue.Queue(maxsize=10)
+    event_q: queue.Queue[dict] = queue.Queue(maxsize=10)
 
     def event_worker():
         while True:
@@ -195,7 +194,7 @@ def run(cfg_path: Path) -> None:
         grab_last_ts = fts
         ts = now_ts()
 
-        dets: List[BBox] = []
+        dets: list[BBox] = []
         if frame_idx % detect_every == 0:
             res = model.predict(frame_p, conf=conf_thres, classes=[0], verbose=False)[0]
             if res.boxes is not None and len(res.boxes) > 0:
@@ -206,7 +205,7 @@ def run(cfg_path: Path) -> None:
 
         tracks = tracker.update(dets, ts)
 
-        dwell_map: Dict[int, float] = {}
+        dwell_map: dict[int, float] = {}
         triggered = False
         triggered_track = None
         triggered_dwell = 0.0

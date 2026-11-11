@@ -2,9 +2,11 @@
 
 Sistema de alertas de vigilancia por ROI con detección de personas vía YOLO sobre stream RTSP: si una persona permanece más de N segundos dentro de la región de interés, captura un snapshot y lo envía a un grupo de WhatsApp vía WAHA. Incluye dashboard web con video en vivo y overlay del ROI.
 
+[![CI](https://github.com/bi0punk/ipcam-hunter/actions/workflows/ci.yml/badge.svg)](https://github.com/bi0punk/ipcam-hunter/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python)](https://python.org)
 [![Ultralytics](https://img.shields.io/badge/Ultralytics-YOLOv8-00B4D8)](https://docs.ultralytics.com/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](https://www.docker.com/)
+[![GHCR](https://img.shields.io/badge/ghcr.io%2Fbi0punk%2Fipcam--hunter-2496ED?logo=docker)](https://github.com/bi0punk/ipcam-hunter/pkgs/container/ipcam-hunter)
 
 ## Contenido
 
@@ -88,8 +90,9 @@ ipcam-hunter/
 │   └── web/                    # Dashboard FastAPI
 │       ├── Dockerfile, requirements.txt
 │       └── webapp/ (main, routers, services overlay/streaming/mjpeg)
-├── tests/                      # pytest (roi_alert + webapp), con mocks
-├── docs/                       # migration.md, quality-report.md
+├── tests/                      # 126 tests (roi_alert + webapp), con mocks
+├── vulture_whitelist.py        # símbolos usados por FastAPI/callbacks
+├── docs/                       # configuración, despliegue, troubleshooting
 ├── .github/workflows/ci.yml    # lint + typecheck + tests
 ├── pyproject.toml              # deps, extras [dev]/[detect], ruff/mypy/pytest
 ├── docker/
@@ -140,14 +143,22 @@ uv pip install --python .venv/bin/python -e ".[detect]"
 Calidad (todo verde en CI):
 
 ```bash
-pytest -q                              # suite (mockea cv2/ultralytics/RTSP)
+pytest -q --cov=roi_alert --cov=webapp --cov-fail-under=65   # 126 tests
 ruff check .                           # lint
 mypy app/roi_alert app/web/webapp scripts
-vulture app scripts --min-confidence 60
+vulture app scripts vulture_whitelist.py --min-confidence 60
 bandit -r app scripts                  # 0 issues
+pip-audit                              # 0 CVEs
 ```
 
-CI: `.github/workflows/ci.yml` (lint+typecheck y tests en Python 3.11).
+CI (`.github/workflows/ci.yml`):
+
+| Job | Qué hace |
+|---|---|
+| `quality` | ruff, mypy, vulture (con whitelist) y bandit, sin `|| true` |
+| `test (3.11 / 3.12)` | pytest + cobertura (gate 65 %) |
+| `audit` | `pip-audit` sobre las dependencias de ejecución |
+| `docker` | build de worker y dashboard; publica en GHCR en `main` y tags |
 
 Documentación de soporte: [`docs/migration.md`](docs/migration.md)
 (requirements.txt → pyproject) y [`docs/quality-report.md`](docs/quality-report.md)
@@ -232,6 +243,34 @@ El dashboard:
 - muestra estado desde `./events/status.json` (lo escribe el worker)
 - permite checks rápidos a WAHA: `/api/waha/health` y `/api/waha/groups?session=default`
 
+## Salud y observabilidad
+
+| Señal | Dónde | Qué indica |
+|---|---|---|
+| `/health` | dashboard (`:8081/health`) | Proceso vivo (sin tocar disco ni RTSP) |
+| `/api/status` | dashboard | Estado del worker (`status.json`) |
+| `events/status.json` | volumen | FPS de inferencia, tracks, última alerta |
+| `events/overlay.json` | volumen | ROI + cajas para el overlay |
+| HEALTHCHECK worker | Docker | `status.json` actualizado en los últimos 120 s |
+| HEALTHCHECK dashboard | Docker | `/health` responde 200 |
+
+```bash
+curl -fsS http://localhost:8081/health
+curl -fsS http://localhost:8081/api/status | python -m json.tool
+docker inspect --format '{{.State.Health.Status}}' roi-alert roi-dashboard
+```
+
+## Despliegue
+
+```bash
+cp .example.env .env        # edita CAM_RTSP_URL, WAHA_*, ISAPI_*
+sudo install -d -o 10001 -g 10001 events cache ultralytics
+docker compose up -d
+```
+
+Detalles (GHCR, systemd, permisos del uid 10001 y checklist) en
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 ## Configuración
 
 Variables de entorno (ver `.example.env`). Ninguna credencial real vive en el
@@ -255,6 +294,18 @@ de `.env` (que está en `.gitignore`).
 | `PREVIEW_WIDTH` / `PREVIEW_FPS` / `JPEG_QUALITY` | Ajustes del dashboard MJPEG |
 
 Parámetros principales de `app/config.yaml`: `dwell_seconds` (2.0), `cooldown_seconds` (60), `yolo_weights` (yolov8n.pt), `conf_thres` (0.35), puntos del ROI, y plantilla de caption de WhatsApp.
+
+## Problemas frecuentes
+
+| Síntoma | Causa probable | Solución |
+|---|---|---|
+| `roi-alert` unhealthy | Sin `status.json` o cámara caída | Revisa logs y `CAM_RTSP_URL` |
+| Dashboard sin video | `CAM_RTSP_URL_PREVIEW` vacía | Define el substream |
+| No llega WhatsApp | `WAHA_CHAT_ID` o sesión inválida | `scripts/compose_urls.sh` y `/api/waha/health` |
+| `Permission denied` en `events/` | Volumen de root | `sudo chown -R 10001:10001 events cache ultralytics` |
+| Detección muy lenta | `fps_limit` alto | Baja `fps_limit` o usa el substream |
+
+Guía completa en [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ## Licencia
 

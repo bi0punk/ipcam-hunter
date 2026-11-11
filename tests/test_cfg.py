@@ -15,28 +15,22 @@ def test_load_cfg_vacio_devuelve_dict(tmp_path):
     assert load_cfg(p) == {}
 
 
-class FakePath(Path):
-    def exists(self):
-        if str(self) == "/data/events":
-            return True
-        return super().exists()
-
-
 def test_resolve_events_dir_env_gana(monkeypatch, tmp_path):
     monkeypatch.setenv("EVENTS_DIR", str(tmp_path / "mi_events"))
     assert resolve_events_dir("ignored") == tmp_path / "mi_events"
 
 
 def test_resolve_events_dir_docker_cuando_existe(monkeypatch):
-    monkeypatch.setattr("roi_alert.cfg.Path", FakePath)
-    assert resolve_events_dir("./events") == Path("/data/events")
-    assert resolve_events_dir("events") == Path("/data/events")
+    monkeypatch.delenv("EVENTS_DIR", raising=False)
+    existe = lambda path: path == Path("/data/events")  # noqa: E731
+    assert resolve_events_dir("./events", exists=existe) == Path("/data/events")
+    assert resolve_events_dir("events", exists=existe) == Path("/data/events")
 
 
 def test_resolve_events_dir_absoluta_no_se_reescribe(monkeypatch):
-    monkeypatch.setattr("roi_alert.cfg.Path", FakePath)
+    monkeypatch.delenv("EVENTS_DIR", raising=False)
     p = Path("/var/custom/events")
-    assert resolve_events_dir(str(p)) == p
+    assert resolve_events_dir(str(p), exists=lambda _path: True) == p
 
 
 def test_pick_rtsp_env_principal(monkeypatch):

@@ -1,4 +1,5 @@
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
@@ -9,14 +10,15 @@ def load_cfg(path: Path) -> dict:
         return yaml.safe_load(f) or {}
 
 
-def resolve_events_dir(cfg_events_dir: str) -> Path:
+def resolve_events_dir(cfg_events_dir: str, *, exists: Callable[[Path], bool] | None = None) -> Path:
     env_events = os.getenv("EVENTS_DIR", "").strip()
     if env_events:
         return Path(env_events)
 
     p = Path(cfg_events_dir)
     docker_events = Path("/data/events")
-    if not p.is_absolute() and docker_events.exists():
+    is_there = exists or (lambda path: path.exists())
+    if not p.is_absolute() and is_there(docker_events):
         if cfg_events_dir.strip() in ("./events", "events"):
             return docker_events
     return p

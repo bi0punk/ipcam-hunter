@@ -29,12 +29,13 @@ sudo chown -R 10001:10001 events cache ultralytics
 
 ## 2. Imágenes publicadas (GHCR)
 
-Cada push a `main` publica:
+Las imágenes publicadas son la **versión 1.0.0** (histórico):
 
 - `ghcr.io/bi0punk/ipcam-hunter:latest` (worker)
 - `ghcr.io/bi0punk/ipcam-hunter-dashboard:latest` (dashboard)
 
-Los tags `vX.Y.Z` generan `:X.Y.Z`.
+GitHub solo aloja el código; para desplegar se construye en local/GitLab con
+`docker compose build`.
 
 ```bash
 docker login ghcr.io -u bi0punk

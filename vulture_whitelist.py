@@ -7,6 +7,7 @@ estos símbolos se declaran aquí para poder correr el chequeo sin `|| true`.
 from app.roi_alert.cfg import resolve_events_dir
 from app.roi_alert.events import EventContext, EventWorker
 from app.roi_alert.rtsp import LatestFrameGrabber
+from webapp.main import health
 from webapp.routers.api import status
 from webapp.routers.stream import mjpeg, snapshot
 from webapp.routers.ui import index
@@ -21,3 +22,4 @@ status
 mjpeg
 snapshot
 index
+health

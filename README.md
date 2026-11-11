@@ -92,7 +92,7 @@ ipcam-hunter/
 ├── tests/                      # 126 tests (roi_alert + webapp), con mocks
 ├── vulture_whitelist.py        # símbolos usados por FastAPI/callbacks
 ├── docs/                       # configuración, despliegue, troubleshooting
-├── .github/workflows/ci.yml    # lint + typecheck + tests
+├── .gitlab-ci.yml              # CI/CD en GitLab
 ├── pyproject.toml              # deps, extras [dev]/[detect], ruff/mypy/pytest
 ├── docker/
 │   └── app/entrypoint.sh
@@ -150,9 +150,9 @@ bandit -r app scripts                  # 0 issues
 pip-audit                              # 0 CVEs
 ```
 
-GitHub solo aloja el código. La integración continua y el despliegue se
-ejecutan en GitLab/entorno local; los workflows de `.github/` están
-deshabilitados en GitHub. La validación es la de la sección anterior.
+GitHub solo aloja el código. La integración continua está en `.gitlab-ci.yml`
+(GitLab) y el despliegue se ejecuta en el entorno local con Docker Compose.
+La validación equivalente en local es la de la sección anterior.
 
 Documentación de soporte: [`docs/migration.md`](docs/migration.md)
 (requirements.txt → pyproject) y [`docs/quality-report.md`](docs/quality-report.md)

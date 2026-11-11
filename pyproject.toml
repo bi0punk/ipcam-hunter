@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ipcam-hunter"
-version = "0.1.0"
+version = "1.0.0"
 description = "Sistema de alertas de vigilancia por ROI: detección YOLO sobre RTSP, alertas WhatsApp (WAHA) y dashboard web MJPEG."
 readme = "README.md"
 requires-python = ">=3.11"

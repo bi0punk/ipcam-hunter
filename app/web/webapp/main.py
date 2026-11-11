@@ -12,6 +12,11 @@ def create_app() -> FastAPI:
     app.include_router(api_router, prefix="/api", tags=["api"])
     app.include_router(stream_router, prefix="/api", tags=["stream"])
 
+    @app.get("/health", tags=["ops"])
+    def health() -> dict[str, str]:
+        """Liveness para Docker/orquestadores."""
+        return {"status": "ok", "service": "roi-dashboard"}
+
     return app
 
 

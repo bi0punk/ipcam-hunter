@@ -3,6 +3,8 @@
 Tres piezas: **WAHA** (WhatsApp), **roi-alert** (worker YOLO) y **dashboard**
 (FastAPI + MJPEG). El compose ya las orquesta.
 
+> Las imágenes publicadas usan **Python 3.15**. Para el entorno local se recomienda 3.11/3.12.
+
 ## 1. Compose (recomendado)
 
 ```bash

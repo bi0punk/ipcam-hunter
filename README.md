@@ -2,7 +2,6 @@
 
 Sistema de alertas de vigilancia por ROI con detección de personas vía YOLO sobre stream RTSP: si una persona permanece más de N segundos dentro de la región de interés, captura un snapshot y lo envía a un grupo de WhatsApp vía WAHA. Incluye dashboard web con video en vivo y overlay del ROI.
 
-[![CI](https://github.com/bi0punk/ipcam-hunter/actions/workflows/ci.yml/badge.svg)](https://github.com/bi0punk/ipcam-hunter/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python)](https://python.org)
 [![Ultralytics](https://img.shields.io/badge/Ultralytics-YOLOv8-00B4D8)](https://docs.ultralytics.com/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](https://www.docker.com/)
@@ -140,7 +139,7 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 uv pip install --python .venv/bin/python -e ".[detect]"
 ```
 
-Calidad (todo verde en CI):
+Calidad (todo verde en local/GitLab):
 
 ```bash
 pytest -q --cov=roi_alert --cov=webapp --cov-fail-under=65   # 126 tests
@@ -151,14 +150,9 @@ bandit -r app scripts                  # 0 issues
 pip-audit                              # 0 CVEs
 ```
 
-CI (`.github/workflows/ci.yml`):
-
-| Job | Qué hace |
-|---|---|
-| `quality` | ruff, mypy, vulture (con whitelist) y bandit, sin `|| true` |
-| `test (3.11 / 3.12)` | pytest + cobertura (gate 65 %) |
-| `audit` | `pip-audit` sobre las dependencias de ejecución |
-| `docker` | build de worker y dashboard; publica en GHCR en `main` y tags |
+GitHub solo aloja el código. La integración continua y el despliegue se
+ejecutan en GitLab/entorno local; los workflows de `.github/` están
+deshabilitados en GitHub. La validación es la de la sección anterior.
 
 Documentación de soporte: [`docs/migration.md`](docs/migration.md)
 (requirements.txt → pyproject) y [`docs/quality-report.md`](docs/quality-report.md)

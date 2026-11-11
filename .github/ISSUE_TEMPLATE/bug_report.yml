@@ -1,0 +1,47 @@
+name: Reporte de bug
+description: El worker, el dashboard o la alerta no funcionan como se documenta
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de abrir el issue revisa `docs/TROUBLESHOOTING.md` y adjunta el
+        diagnóstico (`docker compose logs`, `status.json`).
+  - type: textarea
+    id: que-pasa
+    attributes:
+      label: Qué ocurre
+    validations:
+      required: true
+  - type: textarea
+    id: pasos
+    attributes:
+      label: Pasos para reproducir
+    validations:
+      required: true
+  - type: dropdown
+    id: componente
+    attributes:
+      label: Componente
+      options:
+        - Worker (roi-alert)
+        - Dashboard
+        - WAHA / WhatsApp
+        - Evidencia ISAPI
+        - Docker / CI
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versión / commit
+      placeholder: "v1.0.0 o git rev-parse --short HEAD"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs y estado
+      description: Pega `docker compose logs --tail=200` y `events/status.json`.
+      render: shell

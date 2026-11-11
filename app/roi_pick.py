@@ -66,7 +66,7 @@ def main():
                 cv2.polylines(img, [np.array(points, dtype=np.int32)], False, (0, 255, 0), 2)
         cv2.imshow(win, img)
 
-    def on_mouse(event, x, y, flags, param):
+    def on_mouse(event, x, y, _flags, _param):
         if event == cv2.EVENT_LBUTTONDOWN:
             points.append((x, y))
             redraw()

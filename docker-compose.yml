@@ -42,7 +42,6 @@ services:
       - EVENTS_DIR=/data/events
       - LIVE_FILENAME=live.jpg
       - STATUS_FILENAME=status.json
-      - MJPEG_FPS=8
       - CAM_RTSP_URL_PREVIEW=${CAM_RTSP_URL_PREVIEW}
       
     ports:
